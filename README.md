@@ -17,6 +17,12 @@ nothing leaves your machine.
 - Prints a workshop sheet with the board, the order, the cuts and the
   glue-ups.
 
+**Check the numbers before you buy timber or cut it.** End Grain Calc is a
+free tool and it can be wrong, and your saw, your timber and your mill will
+not match its assumptions exactly. It comes with no warranty, and the author
+takes no responsibility for errors or for anything that follows from using
+it. See the [licence](#licence).
+
 There are no ready-made downloads yet, so for now it is built from source.
 That needs [Rust](https://rustup.rs) and a copy of this repository. Each
 section below has one script to run from the repository's folder.
@@ -363,6 +369,11 @@ End Grain Calc is shared under the [MIT licence](LICENSE): you may use, copy,
 change and share it, including in your own work, as long as the copyright
 notice (which names the author) and the licence text stay with every copy or
 substantial part of it.
+
+It is provided as it is, with no warranty of any kind. The author is not
+liable for any loss or damage that comes from using it, including wasted
+timber or money from numbers that turn out to be wrong. The licence text has
+the full wording.
 
 The TEA JAY HAN name and logo (`assets/teajayhan-*.svg`, and where they appear
 in the app) identify the maker and are not covered by that licence. If you
