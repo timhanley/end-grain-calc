@@ -1,0 +1,37 @@
+[package]
+name = "endgrain"
+version = "0.1.0"
+edition = "2021"
+description = "End grain chopping board calculator: visual layout, timber order list and milled cutting list"
+authors = ["TEA JAY HAN"]
+license = "MIT"
+homepage = "https://teajayhan.com"
+
+# The engine (src/lib.rs: model + calc) is plain Rust with no files, network
+# or windows, so it also builds for wasm32 for a future in-browser version.
+# Everything below the engine is desktop-only.
+
+[features]
+default = ["window"]
+# The app's own window (WebKit on macOS, WebView2 on Windows, WebKitGTK on
+# Linux). Build with --no-default-features for the browser-only binary.
+window = ["dep:wry", "dep:tao", "dep:muda"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tiny_http = "0.12"
+# linux-body: without it WebKitGTK drops the body of every request the page
+# sends, so nothing could be calculated or saved on Linux.
+wry = { version = "0.57.2", optional = true, features = ["linux-body"] }
+tao = { version = "0.37.2", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "0.21.2", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

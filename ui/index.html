@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>End Grain Calc</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="24" height="24">
+      <rect x="1" y="1" width="22" height="22" rx="3" fill="#5a3d2b"/>
+      <rect x="1" y="12.5" width="22" height="3" fill="#b9693c"/>
+      <rect x="1" y="18" width="22" height="3" fill="#b9693c"/>
+      <path d="M8.3 1v11.5M15.6 1v11.5" stroke="#3d281b" stroke-width="1"/>
+    </svg>
+    <span>End Grain Calc</span>
+  </div>
+  <div class="name-wrap">
+    <input id="name" type="text" placeholder="Name this board" aria-label="Board name" autocomplete="off" spellcheck="false">
+    <span id="dirty" hidden>Not saved</span>
+  </div>
+  <div class="bar-actions">
+    <div class="seg dark icons" id="history" role="group" aria-label="Undo and redo">
+      <button type="button" id="undo" aria-label="Undo" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5 2.5 6 6 9.5M2.5 6h6.75a3.75 3.75 0 0 1 0 7.5H7"/></svg></button>
+      <button type="button" id="redo" aria-label="Redo" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2.5 13.5 6 10 9.5M13.5 6H6.75a3.75 3.75 0 0 0 0 7.5H9"/></svg></button>
+    </div>
+    <button id="save" class="btn tape" type="button">Save board</button>
+    <div class="menu-wrap">
+      <button id="boards-btn" class="btn ghost" type="button" aria-haspopup="true" aria-expanded="false">Boards</button>
+      <div id="boards-menu" class="menu" hidden></div>
+    </div>
+    <div class="seg dark" id="units" role="group" aria-label="Units">
+      <button type="button" data-u="mm">mm</button>
+      <button type="button" data-u="in">in</button>
+    </div>
+    <button id="settings-btn" class="btn ghost" type="button" aria-haspopup="dialog">Settings</button>
+    <button id="guide-btn" class="btn ghost" type="button" aria-haspopup="dialog">Guide</button>
+  </div>
+</header>
+
+<div id="conflict" class="conflict" hidden></div>
+
+<main>
+  <aside class="rail">
+    <section>
+      <h2>Finished board</h2>
+      <div class="dims">
+        <label>Width<input id="f-width" class="dim" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>Depth<input id="f-depth" class="dim" type="text" inputmode="decimal" autocomplete="off"></label>
+        <label>Thickness<input id="f-thickness" class="dim" type="text" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <div class="counts">
+        <div class="stepper" data-axis="cols">
+          <span>Columns</span>
+          <button type="button" data-d="-1" aria-label="Remove a column">&minus;</button>
+          <output id="n-cols"></output>
+          <button type="button" data-d="1" aria-label="Add a column">+</button>
+        </div>
+        <div class="stepper" data-axis="rows">
+          <span>Rows</span>
+          <button type="button" data-d="-1" aria-label="Remove a row">&minus;</button>
+          <output id="n-rows"></output>
+          <button type="button" data-d="1" aria-label="Add a row">+</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Timber</h2>
+      <p class="help">Pick one to paint with. Each timber's colour, prices and sawn sizes are under its ··· button.</p>
+      <ul id="timber"></ul>
+      <div class="timber-foot">
+        <button id="add-timber" class="btn small" type="button">Add a timber</button>
+        <button id="import-prices" class="btn small" type="button">Import a price list</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Saw and allowances</h2>
+      <div id="allow-main"></div>
+      <details id="allow-more">
+        <summary>More allowances</summary>
+        <div id="allow-rest"></div>
+        <button id="allow-reset" class="btn small" type="button">Reset allowances</button>
+      </details>
+    </section>
+
+    <a class="credit" id="credit" href="https://teajayhan.com" target="_blank" rel="noopener" title="Visit teajayhan.com">
+      <svg class="credit-mark" viewBox="0 0 358 360" aria-hidden="true"><g transform="translate(0.000000,360.000000) scale(0.100000,-0.100000)" fill="currentColor" stroke="none"> <path d="M1570 3409 c-262 -37 -535 -149 -756 -312 -98 -72 -270 -247 -340 -347 -169 -240 -255 -457 -290 -730 -93 -737 302 -1412 996 -1705 93 -39 209 -73 330 -96 148 -28 422 -28 570 0 343 65 618 211 859 453 254 257 408 561 462 913 20 132 15 381 -10 510 -64 323 -202 592 -421 819 -215 222 -428 355 -705 439 -107 33 -164 45 -265 57 -100 12 -338 11 -430 -1z m428 -274 c442 -66 824 -350 1016 -757 95 -200 126 -339 126 -566 0 -216 -20 -322 -97 -510 -69 -170 -151 -289 -298 -438 -287 -289 -652 -425 -1060 -393 -237 19 -463 97 -661 229 -103 69 -284 252 -357 361 -234 353 -292 791 -155 1184 161 462 568 805 1058 890 104 18 311 18 428 0z"/> <path d="M1655 2941 c-20 -8 -20 -20 -25 -987 l-5 -979 -27 -3 c-14 -2 -68 11 -118 27 -50 17 -96 31 -101 31 -6 0 -8 -55 -7 -142 l3 -143 28 -13 c105 -50 261 -66 333 -33 55 25 120 85 147 135 l22 41 1 945 c0 520 -1 987 -3 1038 l-4 92 -112 -1 c-62 0 -121 -4 -132 -8z"/> <path d="M1346 2863 c-173 -74 -364 -212 -469 -339 -82 -98 -170 -289 -195 -424 -19 -103 -22 -120 -14 -120 4 0 57 47 117 104 61 57 113 102 118 99 4 -2 7 -258 7 -569 l0 -564 58 -54 c74 -70 184 -156 200 -156 8 0 12 23 12 83 0 45 0 401 0 790 0 449 3 715 10 726 5 11 31 32 57 47 57 34 139 80 171 96 21 11 22 16 22 159 0 81 -3 150 -7 152 -5 3 -44 -11 -87 -30z"/> <path d="M2100 1811 c0 -757 3 -1092 11 -1096 5 -4 25 -1 42 5 89 34 165 66 195 83 l32 19 0 399 0 399 130 0 130 0 0 -272 c0 -164 4 -279 10 -288 9 -13 13 -11 30 10 76 93 152 224 200 345 40 100 55 258 47 495 -6 177 -19 243 -66 344 -51 110 -195 321 -212 310 -5 -3 -9 -149 -9 -335 l0 -330 -132 3 -133 3 4 437 3 437 -24 24 c-26 26 -199 97 -235 97 l-23 0 0 -1089z"/> </g></svg>
+      <span class="credit-words">
+        <span>Made with <span class="heart" role="img" aria-label="love">&hearts;</span> for woodworkers by</span>
+        <svg class="credit-name" viewBox="0 0 446 70" role="img" aria-label="TEA JAY HAN"><g transform="translate(0.000000,70.000000) scale(0.100000,-0.100000)" fill="currentColor" stroke="none"> <path d="M117 594 c-4 -4 -7 -24 -7 -45 0 -41 13 -49 88 -49 l42 0 0 -170 0 -170 55 0 55 0 2 168 3 167 45 3 c87 5 91 8 88 55 l-3 42 -181 3 c-99 1 -183 -1 -187 -4z"/> <path d="M537 594 c-13 -13 -8 -419 5 -432 14 -14 315 -17 336 -3 8 5 12 23 10 47 l-3 39 -116 3 -117 3 -5 32 c-8 54 -3 56 106 59 l102 3 0 40 0 40 -105 5 -105 5 0 30 0 30 115 5 115 5 0 45 0 45 -166 3 c-91 1 -168 -1 -172 -4z"/> <path d="M1064 563 c-8 -21 -29 -74 -44 -118 -16 -44 -47 -125 -68 -180 -44 -112 -43 -118 30 -113 27 2 44 9 49 21 5 9 13 25 18 35 7 14 22 17 92 17 l84 0 10 -30 c5 -16 14 -33 20 -37 13 -10 87 -10 101 0 10 6 -54 190 -136 392 l-18 45 -61 3 -60 3 -17 -38z m104 -173 c20 -64 17 -70 -31 -70 -44 0 -48 12 -27 70 11 30 20 56 20 57 0 2 4 3 9 3 5 0 18 -27 29 -60z"/> <path d="M1757 594 c-4 -4 -7 -80 -7 -169 0 -175 -3 -185 -53 -185 -31 0 -56 23 -57 51 0 12 -12 18 -42 21 -24 3 -49 3 -55 0 -20 -7 -15 -50 9 -93 56 -100 223 -107 285 -12 16 23 18 50 18 208 l0 180 -45 3 c-25 2 -49 0 -53 -4z"/> <path d="M2056 578 c-8 -13 -24 -50 -36 -83 -12 -33 -32 -87 -45 -120 -65 -166 -76 -199 -71 -211 6 -14 61 -19 91 -8 8 4 22 22 30 41 l14 34 82 -3 c82 -3 83 -3 90 -32 10 -36 24 -46 69 -46 60 0 66 10 42 72 -11 29 -42 109 -67 178 -83 222 -69 200 -131 200 -45 0 -56 -4 -68 -22z m87 -179 c10 -28 17 -55 17 -60 0 -5 -18 -9 -40 -9 -22 0 -40 4 -40 8 0 21 32 112 39 112 4 0 15 -23 24 -51z"/> <path d="M2300 589 c0 -6 20 -43 44 -83 89 -144 114 -201 109 -250 -3 -25 -3 -56 1 -70 6 -24 11 -26 61 -26 l55 0 0 82 c0 81 1 83 57 182 31 56 65 114 76 129 26 39 13 49 -55 41 l-55 -6 -36 -74 c-20 -41 -41 -74 -45 -74 -5 0 -21 24 -37 53 -55 103 -60 107 -121 107 -33 0 -54 -4 -54 -11z"/> <path d="M2947 594 c-4 -4 -7 -103 -7 -221 l0 -213 55 0 54 0 3 88 3 87 78 3 c42 2 78 -1 78 -5 1 -4 3 -43 5 -87 1 -43 7 -83 12 -88 5 -5 29 -8 53 -6 l44 3 0 220 0 220 -50 0 -50 0 -3 -77 -3 -78 -84 0 -84 0 -3 78 -3 77 -45 3 c-25 2 -49 0 -53 -4z"/> <path d="M3530 578 c-6 -13 -44 -111 -84 -218 -82 -214 -82 -208 -5 -209 40 -1 54 10 64 52 l7 28 81 -3 c84 -3 81 -2 107 -58 8 -17 97 -27 112 -12 5 5 -4 41 -21 88 -41 111 -118 316 -126 337 -6 13 -19 17 -66 17 -52 0 -61 -3 -69 -22z m91 -175 c7 -27 15 -54 17 -60 2 -9 -9 -13 -37 -13 -27 0 -41 4 -41 13 0 23 31 107 40 107 4 0 14 -21 21 -47z"/> <path d="M3867 585 c-9 -22 3 -419 12 -428 5 -5 28 -6 50 -2 l41 7 0 124 c0 68 3 124 8 124 4 0 40 -55 81 -121 41 -67 83 -125 95 -130 12 -6 37 -6 61 -1 l40 8 1 169 c1 94 -1 191 -3 218 l-5 47 -44 0 c-27 0 -46 -5 -49 -12 -2 -7 -7 -61 -10 -120 -4 -60 -10 -108 -13 -108 -4 0 -34 46 -67 101 -80 134 -85 139 -144 139 -34 0 -51 -5 -54 -15z"/> </g></svg>
+      </span>
+    </a>
+  </aside>
+
+  <section class="stage">
+    <p class="hint">Pick a timber, then click a cell to change it, or drag across several. Click the yellow tape to size a row or column, drag it to move one, or drag the joins between them to resize. A size shown like <span class="pin-key"><svg class="pin-i" viewBox="0 0 10 12" aria-hidden="true"><path d="M2.5 0h5v1.6h-.9l.4 3.4 2 2v1H5.6L5 12 4.4 8H1V7l2-2 .4-3.4h-.9z"/></svg>45</span> is pinned; the rest share what is left over.</p>
+    <div id="issues"></div>
+    <div id="board-wrap"><svg id="board" role="img" aria-label="Top view of the board"></svg></div>
+    <div id="axis"></div>
+  </section>
+
+  <section class="results" id="results"></section>
+</main>
+
+<dialog id="guide" aria-labelledby="guide-title">
+  <div class="guide-head">
+    <h2 id="guide-title">How an end grain board goes together</h2>
+    <span class="guide-acts"><button id="guide-print" class="btn small tape" type="button">Print this guide</button>
+    <button id="guide-close" class="btn small" type="button">Close</button></span>
+  </div>
+  <ol class="guide-steps">
+        <li><svg viewBox="0 0 140 90" aria-hidden="true"><rect x="8" y="26" width="124" height="34" fill="#5a3d2b"/><path d="M8 37.3h124M8 48.6h124" stroke="#fff" stroke-width="1.2" stroke-dasharray="5 4"/></svg><p>Start with a rough or sawn board, a little bigger than you need.</p></li>
+        <li><svg viewBox="0 0 140 90" aria-hidden="true"><rect x="8" y="16" width="124" height="14" fill="#5a3d2b"/><rect x="8" y="38" width="124" height="9" fill="#b9693c"/><rect x="8" y="55" width="124" height="6" fill="#5a3d2b"/><rect x="8" y="69" width="124" height="9" fill="#b9693c"/></svg><p>Rip it into <b>strips</b> and plane them to size.</p></li>
+        <li><svg viewBox="0 0 140 90" aria-hidden="true"><rect x="8" y="20" width="124" height="16" fill="#5a3d2b"/><rect x="8" y="36" width="124" height="9" fill="#b9693c"/><rect x="8" y="45" width="124" height="6" fill="#5a3d2b"/><rect x="8" y="51" width="124" height="9" fill="#b9693c"/><rect x="8" y="60" width="124" height="6" fill="#5a3d2b"/><rect x="8.5" y="20.5" width="123" height="45" fill="none" stroke="rgba(22,12,6,.6)"/></svg><p>Glue the strips edge to edge into a <b>panel</b>, then flatten it.</p></li>
+        <li><svg viewBox="0 0 140 90" aria-hidden="true"><rect x="8" y="20" width="98" height="16" fill="#5a3d2b"/><rect x="8" y="36" width="98" height="9" fill="#b9693c"/><rect x="8" y="45" width="98" height="6" fill="#5a3d2b"/><rect x="8" y="51" width="98" height="9" fill="#b9693c"/><rect x="8" y="60" width="98" height="6" fill="#5a3d2b"/><rect x="25" y="18" width="2" height="50" fill="#cf2e2a"/><rect x="43" y="18" width="2" height="50" fill="#cf2e2a"/><rect x="61" y="18" width="2" height="50" fill="#cf2e2a"/><rect x="79" y="18" width="2" height="50" fill="#cf2e2a"/><rect x="97" y="18" width="2" height="50" fill="#cf2e2a"/><rect x="116" y="20" width="16" height="16" fill="#5a3d2b"/><rect x="116" y="36" width="16" height="9" fill="#b9693c"/><rect x="116" y="45" width="16" height="6" fill="#5a3d2b"/><rect x="116" y="51" width="16" height="9" fill="#b9693c"/><rect x="116" y="60" width="16" height="6" fill="#5a3d2b"/><path d="M108 14l8 0M112 10l4 4-4 4" fill="none" stroke="#1c2931" stroke-width="1.5"/></svg><p>Crosscut the panel into <b>slices</b>. Each cut loses a <b>kerf</b>.</p></li>
+        <li><svg viewBox="0 0 140 90" aria-hidden="true"><g><rect x="20" y="12" width="100" height="24.0" fill="#5a3d2b"/><rect x="20" y="36.0" width="100" height="13.5" fill="#b9693c"/><rect x="20" y="49.5" width="100" height="9.0" fill="#5a3d2b"/><rect x="20" y="58.5" width="100" height="13.5" fill="#b9693c"/><rect x="20" y="72.0" width="100" height="9.0" fill="#5a3d2b"/><path d="M36.7 12v69" stroke="rgba(22,12,6,.45)"/><path d="M53.4 12v69" stroke="rgba(22,12,6,.45)"/><path d="M70.1 12v69" stroke="rgba(22,12,6,.45)"/><path d="M86.8 12v69" stroke="rgba(22,12,6,.45)"/><path d="M103.5 12v69" stroke="rgba(22,12,6,.45)"/><rect x="20.5" y="12.5" width="99" height="68" rx="3" fill="none" stroke="rgba(22,12,6,.6)"/></g></svg><p>Stand the slices end grain up and glue them side by side. Each slice is one column of the board.</p></li>
+  </ol>
+  <p class="guide-note"><b>Columns or rows.</b> The pictures show each slice becoming a column. The slices can just as well become the board's rows: choose under the board picture, at "Crosscut the first glue-up into". Then each strip makes a column instead of a row, and wherever this guide says column, read row.</p>
+  <h2>What the words mean</h2>
+  <dl class="guide-terms">
+        <div><dt>Row, column, cell</dt><dd>Seen from above, the finished board is a grid of rows and columns. A cell is one block of end grain where a row and a column cross.</dd></div>
+        <div><dt>Strip</dt><dd>A long piece of one timber, planed square. When slices become columns, its width is one row of the board and its thickness is one column. When slices become rows, it is the other way round.</dd></div>
+        <div><dt>Panel</dt><dd>The first glue-up: strips glued edge to edge. One panel supplies every column (or every row, if slices become rows) that has the same width and the same run of timbers.</dd></div>
+        <div><dt>Slice</dt><dd>A piece crosscut off the end of a panel, a little longer than the board is thick. Stood on end, it becomes one column of the board, or one row if you crosscut into rows.</dd></div>
+        <div><dt>Slices as columns or rows</dt><dd>The choice under the board picture. It decides which way the first glue-up is made. "Whichever needs fewer" picks the way with fewer glue-ups: a board of plain stripes needs one glue-up one way and several the other.</dd></div>
+        <div><dt>Kerf</dt><dd>The width of the saw cut. It is lost at every rip and every crosscut, so it is added between strips and between slices.</dd></div>
+        <div><dt>Pinned and unpinned</dt><dd>A pinned row or column keeps the size you typed, and the tape shows it in bold on a darker band with a pin. Unpinned ones share whatever is left over equally, so they stretch or shrink with the board.</dd></div>
+        <div><dt>Rip at</dt><dd>The width to set the saw to. It is the finished size plus your rough width loss, so there is timber left to plane.</dd></div>
+        <div><dt>On edge</dt><dd>The strip is cut so that its width comes out of the board’s thickness rather than across its face. It lets a thinner board make a wider strip.</dd></div>
+        <div><dt>Rough losses</dt><dd>What planing takes off sawn timber to make it flat and square. Thickness, width and length each have their own allowance.</dd></div>
+        <div><dt>Flattening</dt><dd>Extra left on the strips (panel flattening) and on the slices (end grain flattening) so each glue-up can be planed or sanded flat afterwards.</dd></div>
+        <div><dt>Edge trim</dt><dd>Extra width on the two outer strips, cut away when the finished board is squared up.</dd></div>
+        <div><dt>Board foot</dt><dd>A volume of timber: 1 inch thick, 12 inches wide and 12 inches long. Rough thickness is given in quarter inches, so 8/4 is 2 inches.</dd></div>
+        <div><dt>Sawn size</dt><dd>A fixed cross-section that a mill sells by the metre, such as 50 × 150 mm. Sizes are nominal and can vary by a millimetre or two.</dd></div>
+        <div><dt>Avoid ripping</dt><dd>Gives a strip a whole sawn board to itself, planed to size, where that would not waste too much of the board.</dd></div>
+  </dl>
+</dialog>
+
+<dialog id="setup" aria-labelledby="setup-title"></dialog>
+
+<div id="pop" class="pop" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+/target
+/dist
+# Local settings for the Claude Code assistant
+/.claude
