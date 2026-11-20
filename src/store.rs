@@ -33,9 +33,9 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
-            currency: "\u{a3}".into(),
+            currency: "$".into(),
             units: Units::Mm,
-            order_by: OrderBy::Bf,
+            order_by: OrderBy::Sawn,
             tax_pct: 0.0,
             setup_done: false,
             check_updates: true,
@@ -257,7 +257,7 @@ mod tests {
     fn the_currency_symbol_is_remembered_and_kept_short() {
         let dir = std::env::temp_dir().join(format!("endgrain-prefs-{}", std::process::id()));
         let store = Store::open(dir.clone()).unwrap();
-        assert_eq!(store.prefs().currency, "\u{a3}");
+        assert_eq!(store.prefs().currency, "$");
         let with = |currency: &str| Prefs {
             currency: currency.into(),
             ..Prefs::default()
@@ -265,7 +265,7 @@ mod tests {
         store.save_prefs(&with("  kr ").cleaned()).unwrap();
         assert_eq!(store.prefs().currency, "kr");
         assert_eq!(with("dollars").cleaned().currency, "doll");
-        assert_eq!(with("   ").cleaned().currency, "\u{a3}");
+        assert_eq!(with("   ").cleaned().currency, "$");
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -273,14 +273,16 @@ mod tests {
     fn setup_choices_are_remembered_and_older_files_still_read() {
         let dir = std::env::temp_dir().join(format!("endgrain-setup-{}", std::process::id()));
         let store = Store::open(dir.clone()).unwrap();
-        // A new installation: millimetres, no tax, setup still to do.
+        // A new installation: dollars, millimetres, sawn sizes, no tax, and
+        // setup still to do.
         let fresh = store.prefs();
         assert!(!fresh.setup_done && fresh.units == Units::Mm && fresh.tax_pct == 0.0);
+        assert!(fresh.currency == "$" && fresh.order_by == OrderBy::Sawn);
 
         // A file from before setup existed has only the currency.
-        fs::write(dir.join("prefs.json"), r#"{ "currency": "$" }"#).unwrap();
+        fs::write(dir.join("prefs.json"), r#"{ "currency": "£" }"#).unwrap();
         let old = store.prefs();
-        assert!(old.currency == "$" && !old.setup_done && old.order_by == OrderBy::Bf);
+        assert!(old.currency == "£" && !old.setup_done && old.order_by == OrderBy::Sawn);
         assert!(old.check_updates, "older files check for new versions");
 
         let chosen = Prefs {

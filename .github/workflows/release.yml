@@ -36,6 +36,12 @@ jobs:
       - name: Run the tests
         run: cargo test --release
 
+      - name: Install dmgbuild, for the disk image's window and background
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet dmgbuild==2.0.0
+          echo "$RUNNER_TEMP/dmgbuild/bin" >> "$GITHUB_PATH"
+
       - name: Build the app for Apple silicon and Intel, and the disk image
         run: ./scripts/bundle-mac.sh --universal --dmg
 
@@ -46,6 +52,14 @@ jobs:
           lipo -archs "$app/Contents/MacOS/endgrain" | grep -q x86_64
           lipo -archs "$app/Contents/MacOS/endgrain" | grep -q arm64
           codesign --verify --deep --strict "$app"
+          # The disk image has its background, and the app in it is intact.
+          mnt="$RUNNER_TEMP/dmg"
+          mkdir -p "$mnt"
+          hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mnt" dist/End-Grain-Calc-mac.dmg
+          ls -la "$mnt"
+          test -f "$mnt/.background.tiff"
+          codesign --verify --deep --strict "$mnt/End Grain Calc.app"
+          hdiutil detach -quiet "$mnt"
 
       - name: Start the app and see it calculate a board
         continue-on-error: true

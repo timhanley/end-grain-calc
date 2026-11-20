@@ -68,10 +68,50 @@ enum Host {
     OpenSite,
     /// Open the page where new versions are published.
     OpenReleases,
+    /// Open one of the app's own pages on GitHub, or the maker's site.
+    OpenLink(String),
 }
 
 const MAKER_SITE: &str = "https://teajayhan.com";
 const RELEASES_PAGE: &str = "https://github.com/timhanley/end-grain-calc/releases/latest";
+
+/// The only places the page may ask the window to open in a browser.
+fn may_open(url: &str) -> bool {
+    let ours = ["https://github.com/timhanley/end-grain-calc", MAKER_SITE];
+    ours.iter().any(|base| {
+        url.strip_prefix(base)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '#', '?']))
+    }) && url
+        // Plain characters only: Windows opens the link through its shell.
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/:.-_#?=~%".contains(c))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_open;
+
+    #[test]
+    fn only_the_apps_own_pages_can_be_opened() {
+        assert!(may_open("https://github.com/timhanley/end-grain-calc"));
+        assert!(may_open(
+            "https://github.com/timhanley/end-grain-calc/blob/main/LICENSE"
+        ));
+        assert!(may_open(
+            "https://github.com/timhanley/end-grain-calc#your-mills-prices"
+        ));
+        assert!(may_open("https://teajayhan.com"));
+        assert!(!may_open(
+            "https://github.com/timhanley/end-grain-calc-archive"
+        ));
+        assert!(!may_open("https://teajayhan.com.example.org/"));
+        assert!(!may_open("https://github.com/someone-else/repo"));
+        assert!(!may_open(
+            "https://github.com/timhanley/end-grain-calc/x&calc.exe"
+        ));
+        assert!(!may_open("file:///etc/passwd"));
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn mac_menu(proxy: tao::event_loop::EventLoopProxy<Host>) -> muda::Menu {
@@ -206,10 +246,15 @@ pub fn run(app: App) -> ! {
                 "dirty:0" => Host::Dirty(false),
                 "open-site" => Host::OpenSite,
                 "open-releases" => Host::OpenReleases,
-                other => match other.strip_prefix("title:") {
-                    Some(title) => Host::Title(title.to_string()),
-                    None => return,
-                },
+                other => {
+                    if let Some(title) = other.strip_prefix("title:") {
+                        Host::Title(title.to_string())
+                    } else if let Some(url) = other.strip_prefix("open:").filter(|u| may_open(u)) {
+                        Host::OpenLink(url.to_string())
+                    } else {
+                        return;
+                    }
+                }
             };
             let _ = from_page.send_event(host);
         })
@@ -259,6 +304,7 @@ pub fn run(app: App) -> ! {
             Event::UserEvent(Host::Title(title)) => window.set_title(&title),
             Event::UserEvent(Host::OpenSite) => crate::server::open_browser(MAKER_SITE),
             Event::UserEvent(Host::OpenReleases) => crate::server::open_browser(RELEASES_PAGE),
+            Event::UserEvent(Host::OpenLink(url)) => crate::server::open_browser(&url),
             Event::UserEvent(Host::PrintLists) => {
                 let _ = webview.evaluate_script("window.endgrainPrintLists()");
             }

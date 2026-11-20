@@ -5,6 +5,12 @@
 #   ./scripts/bundle-mac.sh --universal   for Apple silicon and Intel in one app
 #   ./scripts/bundle-mac.sh --dmg         also pack it as dist/End-Grain-Calc-mac.dmg
 #
+# --dmg uses dmgbuild, if it is installed, for a window with a background
+# that shows where to drag the app and how to open it the first time
+# (assets/dmg). Without it the disk image is plain. To install it:
+#   python3 -m venv ~/.dmgbuild && ~/.dmgbuild/bin/pip install dmgbuild
+# and put ~/.dmgbuild/bin on your PATH, or set DMGBUILD to its path.
+#
 # --universal needs both Rust targets:
 #   rustup target add aarch64-apple-darwin x86_64-apple-darwin
 set -euo pipefail
@@ -75,11 +81,19 @@ echo "Built $APP ($(du -sh "$APP" | cut -f1), $(lipo -archs "$APP/Contents/MacOS
 if [ "$DMG" = 1 ]; then
   # A disk image with the app and a shortcut to Applications to drag it to.
   DMG_FILE="dist/End-Grain-Calc-mac.dmg"
-  STAGE=$(mktemp -d)
-  trap 'rm -rf "$STAGE"' EXIT
-  cp -R "$APP" "$STAGE/"
-  ln -s /Applications "$STAGE/Applications"
+  DMGBUILD="${DMGBUILD:-$(command -v dmgbuild || true)}"
   rm -f "$DMG_FILE"
-  hdiutil create -quiet -volname "End Grain Calc" -srcfolder "$STAGE" -fs HFS+ -format UDZO "$DMG_FILE"
+  if [ -n "$DMGBUILD" ]; then
+    "$DMGBUILD" -s assets/dmg/settings.py \
+      -D app="$APP" -D background=assets/dmg/background.png -D icon=assets/icon.icns \
+      "End Grain Calc" "$DMG_FILE" > /dev/null
+  else
+    echo "dmgbuild isn't installed, so the disk image has no background (see the top of this script)."
+    STAGE=$(mktemp -d)
+    trap 'rm -rf "$STAGE"' EXIT
+    cp -R "$APP" "$STAGE/"
+    ln -s /Applications "$STAGE/Applications"
+    hdiutil create -quiet -volname "End Grain Calc" -srcfolder "$STAGE" -fs HFS+ -format UDZO "$DMG_FILE"
+  fi
   echo "Built $DMG_FILE ($(du -sh "$DMG_FILE" | cut -f1))"
 fi

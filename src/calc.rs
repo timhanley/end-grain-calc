@@ -557,6 +557,36 @@ fn sawn_order(
     lines
 }
 
+/// One warning for every panel whose strips had to be padded out to the
+/// shortest strip, however many there are.
+fn short_panels_warning(short: &[(usize, usize)]) -> Option<String> {
+    let (&(first, _), &(last, _)) = (short.first()?, short.last()?);
+    let fewest = short.iter().map(|&(_, n)| n).min()?;
+    let most = short.iter().map(|&(_, n)| n).max()?;
+    let slices = match (fewest, most) {
+        (1, 1) => "1 slice".to_string(),
+        (a, b) if a == b => format!("{a} slices"),
+        (a, b) if b == a + 1 => format!("{a} or {b} slices"),
+        (a, b) => format!("{a} to {b} slices"),
+    };
+    if short.len() == 1 {
+        return Some(format!(
+            "Panel {} only makes {slices}, so its strips are padded to your shortest strip length.",
+            panel_label(first)
+        ));
+    }
+    let names: Vec<String> = short.iter().map(|&(i, _)| panel_label(i)).collect();
+    let panels = if short.len() > 2 && last - first + 1 == short.len() {
+        format!("{} to {}", names[0], names[names.len() - 1])
+    } else {
+        let (rest, end) = names.split_at(names.len() - 1);
+        format!("{} and {}", rest.join(", "), end[0])
+    };
+    Some(format!(
+        "Panels {panels} only make {slices} each, so their strips are padded to your shortest strip length."
+    ))
+}
+
 fn push_once(list: &mut Vec<String>, msg: String) {
     if !list.contains(&msg) {
         list.push(msg);
@@ -811,6 +841,8 @@ fn build_plan(
 
     let mut panels: Vec<Panel> = Vec::new();
     let mut too_big: Vec<TooBig> = Vec::new();
+    // Panels too short for the shortest strip: (panel number, slices).
+    let mut short: Vec<(usize, usize)> = Vec::new();
 
     for (gi, g) in groups.into_iter().enumerate() {
         let label = panel_label(gi);
@@ -988,15 +1020,7 @@ fn build_plan(
         }
 
         if padded {
-            push_once(
-                &mut warnings,
-                format!(
-                    "Panel {} only makes {} slice{}, so its strips are padded to your shortest strip length.",
-                    label,
-                    n,
-                    if n == 1 { "" } else { "s" }
-                ),
-            );
+            short.push((gi, n));
         }
 
         panels.push(Panel {
@@ -1011,6 +1035,10 @@ fn build_plan(
             padded,
             strips,
         });
+    }
+
+    if let Some(msg) = short_panels_warning(&short) {
+        warnings.push(msg);
     }
 
     // ---- milled cutting list: identical strips counted together
@@ -1992,6 +2020,31 @@ mod tests {
                 && close(round_up(2.52, 0.5), 3.0)
         );
         assert!(close(round_up(2.521, 0.0), 2.53));
+    }
+
+    #[test]
+    fn short_panels_are_named_in_one_warning() {
+        assert_eq!(short_panels_warning(&[]), None);
+        assert_eq!(
+            short_panels_warning(&[(1, 2)]).unwrap(),
+            "Panel B only makes 2 slices, so its strips are padded to your shortest strip length."
+        );
+        assert_eq!(
+            short_panels_warning(&[(0, 1)]).unwrap(),
+            "Panel A only makes 1 slice, so its strips are padded to your shortest strip length."
+        );
+        assert_eq!(
+            short_panels_warning(&[(1, 2), (2, 2), (3, 2), (4, 1)]).unwrap(),
+            "Panels B to E only make 1 or 2 slices each, so their strips are padded to your shortest strip length."
+        );
+        assert_eq!(
+            short_panels_warning(&[(0, 3), (2, 2)]).unwrap(),
+            "Panels A and C only make 2 or 3 slices each, so their strips are padded to your shortest strip length."
+        );
+        assert_eq!(
+            short_panels_warning(&[(0, 1), (2, 4), (5, 2)]).unwrap(),
+            "Panels A, C and F only make 1 to 4 slices each, so their strips are padded to your shortest strip length."
+        );
     }
 
     #[test]

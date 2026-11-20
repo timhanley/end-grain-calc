@@ -7,7 +7,7 @@ Click or drag to paint. Drag the joins to resize rows and columns. As you
 play, it works out the timber to order from the mill, the cutting list, every
 glue-up and what it'll all cost.
 
-![The designer: timbers on the left, the board in the middle with its yellow tapes, and the order from the mill on the right](docs/screenshots/designer.webp)
+![The designer: a walnut board with cherry stripes along one end in the middle, the timbers on the left, and the order from the mill on the right](docs/screenshots/designer.webp)
 
 ## Design it the way you'd sketch it
 
@@ -23,6 +23,15 @@ board, and you shape it with your mouse.
   shares what's left over.
 - **Change your mind.** Undo and redo everything, so there's no harm in
   trying something bold.
+
+<p>
+<img src="docs/screenshots/board-diamond.webp" width="400" alt="A diamond medallion board: rings of maple, cherry, walnut, padauk and purpleheart spreading out from the centre in a 17 by 13 grid">
+<img src="docs/screenshots/board-tartan.webp" width="360" alt="A walnut tartan board: wide walnut squares crossed by thin maple stripes, with bands of cherry and purpleheart, padauk where the maple stripes cross, and every size pinned on the yellow tapes">
+</p>
+
+Two boards painted cell by cell, to show what's possible: a diamond medallion
+in five timbers, and a walnut tartan whose thin stripes are pinned sizes. The
+tartan needs only two glue-ups.
 
 ## What else it does
 
@@ -107,7 +116,10 @@ same way as [the download](#download).
 
 `--universal` builds one app for both Apple silicon and Intel (it needs
 `rustup target add aarch64-apple-darwin x86_64-apple-darwin` first), and
-`--dmg` also packs it as a disk image. The downloads are built that way.
+`--dmg` also packs it as a disk image. The downloads are built that way. The
+disk image only gets its background, which shows where to drag the app and
+how to open it the first time, if [dmgbuild](https://github.com/dmgbuild/dmgbuild)
+is installed; the top of `scripts/bundle-mac.sh` says how.
 
 ### Build the Windows app
 
@@ -244,11 +256,13 @@ picks the way with fewer glue-ups.
 **Print these lists** prints the board with all of the above (File > Print
 Lists does the same in the Mac app). The board's picture and summary share
 the top of the first page and the lists run on from there, with about 14 mm
-of margin. The **Guide** button shows how an end grain board goes together as
-a picture, explains the terms used (strip, panel, slice, kerf, pinned, rip at
-and so on), and can be printed on its own.
+of margin. The **Guide** button opens a short manual in pages: how an end grain board
+goes together, designing, the lists, ordering, your mill's prices, how the
+numbers are worked out, what the words mean, and an About page with the
+version, where your work is kept and the licence. "Print this guide" prints
+all of it.
 
-<img src="docs/screenshots/guide.webp" width="640" alt="The guide: five pictures from a sawn board to the finished chopping board, then what each word means">
+<img src="docs/screenshots/guide.webp" width="640" alt="The guide, open at its first page: five pictures from a sawn board to the finished chopping board, with tabs for designing, the lists, ordering, mill prices, the numbers, the glossary and about">
 
 ## Two ways to write the order
 
@@ -400,6 +414,8 @@ board's units.
 - `scripts/bundle-mac.sh`, `scripts/build-windows.cmd`,
   `scripts/build-linux.sh`: build the app for each system
 - `scripts/make_icon.py`: draws the app icon for the Mac and Windows
+- `assets/dmg/`: the Mac disk image's window and background
+  (`scripts/make_dmg_background.sh` redraws the background)
 - `build.rs`: puts the icon and the app's name into the Windows .exe
 - `.github/workflows/release.yml`: builds the Mac and Windows downloads
 - `examples/hill-sawmill.json`: an example price list for an invented mill,

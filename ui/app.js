@@ -53,7 +53,7 @@ const S = {
   boards: [],
   mill: null, // your mill's price list, once one has been imported
   // The currency symbol, and what a new board starts with.
-  prefs: { currency: '£', units: 'mm', order_by: 'bf', tax_pct: 0, setup_done: true, check_updates: true },
+  prefs: { currency: '$', units: 'mm', order_by: 'sawn', tax_pct: 0, setup_done: true, check_updates: true },
   setup: null, // the settings screen while it is open
   info: null,
   pending: null, // what to do once unsaved changes are dealt with
@@ -1313,6 +1313,41 @@ function panelSvg(pn, upright) {
   return { svg: out + `</svg>`, stretched: ka > k * 1.05 };
 }
 
+/** A button that goes straight to whatever a note asks you to change. */
+function noteAction(note) {
+  const link = (attrs, text) => ` <button type="button" class="link no-print" ${attrs}>${text}</button>`;
+  if (/padded to your shortest strip length/.test(note)) return link('data-allow="min_strip_length"', 'Change shortest strip');
+  if (/longest board/i.test(note)) return link('data-allow="max_length"', 'Change longest board');
+  const named = /^No sawn sizes are entered for (.+), so it is listed/.exec(note);
+  const t = named && S.library.find((x) => x.name === named[1]);
+  if (t) return link(`data-sawn="${esc(t.id)}"`, `Enter sawn sizes for ${esc(t.name)}`);
+  return '';
+}
+
+/** The engine's notes about this board, in one small box. With more than two
+    it shows the first and folds the rest away; on paper it shows them all. */
+function notesBox(notes) {
+  if (!notes.length) return '';
+  if (notes.length === 1) return `<div class="notes open" role="note"><p>${esc(notes[0])}${noteAction(notes[0])}</p></div>`;
+  const folds = notes.length > 2;
+  const open = !folds || S.notesOpen;
+  const items = notes.map((n, i) => `<li${folds && i > 0 ? ' class="more"' : ''}>${esc(n)}${noteAction(n)}</li>`).join('');
+  const toggle = folds
+    ? `<button type="button" class="link no-print" data-notes>${open ? 'Show fewer' : `Show ${notes.length - 1} more`}</button>`
+    : '';
+  return `<div class="notes${open ? ' open' : ''}" role="note"><p class="notes-head"><b>${notes.length === 1 ? 'Note' : `${notes.length} notes`}</b>${toggle}</p><ul>${items}</ul></div>`;
+}
+
+/** Open "More allowances" if need be and put the cursor in one of them. */
+function goToAllowance(key) {
+  const input = $(`#a-${key}`);
+  if (!input) return;
+  if (input.closest('#allow-more')) $('#allow-more').open = true;
+  input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  input.focus({ preventScroll: true });
+  input.select();
+}
+
 function renderResults() {
   const el = $('#results');
   const r = S.result;
@@ -1379,7 +1414,7 @@ function renderResults() {
   const printed = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   h = `<div class="print-bar no-print"><span>Order, cutting list and glue-ups for the workshop</span><button type="button" class="btn small tape" id="print-lists">Print these lists</button></div>
     <p class="print-only sheet-head">Finished board <b>${fmt(r.actual_width)} &times; ${fmt(r.actual_depth)} &times; ${fmt(p.thickness)}</b>, ${plural(p.cols.length, 'column')} by ${plural(p.rows.length, 'row')}. Saw kerf ${fmt(p.settings.kerf)}. Printed ${printed}.</p>` + h;
-  for (const w of plan.warnings) h += `<p class="warn">${esc(w)}</p>`;
+  h += notesBox(plan.warnings);
 
   h += `<section><div class="sec-head"><h2>Order from the mill</h2><button type="button" class="btn small no-print" id="copy-order">Copy order</button></div>
     ${bySegment}`;
@@ -1497,6 +1532,7 @@ function renderResults() {
     <li>Flatten to ${fmt(p.thickness)} thick and trim the two ragged edges to finish at ${fmt(r.actual_width)} by ${fmt(r.actual_depth)}.</li>
   </ol></section>`;
 
+  h += `<p class="print-only sheet-foot">Made with End Grain Calc${S.info ? ` ${esc(S.info.version)}` : ''}. Check the numbers before you buy timber or cut it: the app can be wrong and comes with no warranty.</p>`;
   el.innerHTML = h;
 }
 const pn0 = (plan) => plan.panels[0];
@@ -1543,6 +1579,83 @@ function printPage(what) {
   if (reopen) guide.showModal();
 }
 
+// ----------------------------------------------------------------- guide
+
+const GUIDE_PAGES = () => [...document.querySelectorAll('#guide .guide-page')].map((s) => s.dataset.page);
+
+/** Show one page of the guide, with its tab marked and a link to the next. */
+function showGuidePage(page) {
+  const pages = GUIDE_PAGES();
+  if (!pages.includes(page)) page = pages[0];
+  for (const s of document.querySelectorAll('#guide .guide-page')) s.hidden = s.dataset.page !== page;
+  for (const b of document.querySelectorAll('#guide .guide-tabs button')) {
+    const on = b.dataset.page === page;
+    b.setAttribute('aria-selected', on);
+    b.tabIndex = on ? 0 : -1;
+  }
+  $('#guide .guide-body').scrollTop = 0;
+  try {
+    localStorage.setItem('endgrain:guide', page);
+  } catch (_) { /* nothing remembered */ }
+}
+
+/** Things in the guide that depend on this copy of the app. */
+function fillGuide() {
+  if (S.info) {
+    $('#guide-version').textContent = S.info.version;
+    $('#guide-data').textContent = S.info.data_dir;
+  }
+}
+
+/** Open a page on GitHub or the maker's site. In the app window a link
+    would replace the designer, so the window opens it in the usual browser. */
+function openExternal(url) {
+  if (host) host(`open:${url}`);
+  else window.open(url, '_blank', 'noopener');
+}
+
+function buildGuide() {
+  const guide = $('#guide');
+  const pages = GUIDE_PAGES();
+  // Each page ends with a way on to the next.
+  for (const s of guide.querySelectorAll('.guide-page')) {
+    const i = pages.indexOf(s.dataset.page);
+    if (i < pages.length - 1) {
+      const next = guide.querySelector(`.guide-tabs [data-page="${pages[i + 1]}"]`).textContent;
+      s.insertAdjacentHTML('beforeend', `<p class="guide-next"><button type="button" class="btn small" data-goto="${pages[i + 1]}">Next: ${esc(next)} &rarr;</button></p>`);
+    }
+  }
+  guide.querySelector('.guide-tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-page]');
+    if (b) showGuidePage(b.dataset.page);
+  });
+  // Left and right arrows move between tabs, as tabs usually do.
+  guide.querySelector('.guide-tabs').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const i = pages.indexOf(guide.querySelector('.guide-tabs [aria-selected="true"]').dataset.page);
+    const to = pages[(i + (e.key === 'ArrowRight' ? 1 : pages.length - 1)) % pages.length];
+    showGuidePage(to);
+    guide.querySelector(`.guide-tabs [data-page="${to}"]`).focus();
+  });
+  guide.querySelector('.guide-body').addEventListener('click', (e) => {
+    const go = e.target.closest('[data-goto]');
+    if (go) {
+      e.preventDefault();
+      return showGuidePage(go.dataset.goto);
+    }
+    const link = e.target.closest('a[data-external]');
+    if (link) {
+      e.preventDefault();
+      openExternal(link.href);
+    }
+  });
+  let first = null;
+  try {
+    first = localStorage.getItem('endgrain:guide');
+  } catch (_) { /* start at the beginning */ }
+  showGuidePage(first);
+}
+
 /** The app's File > Print Lists menu item calls this. */
 window.endgrainPrintLists = () => printPage('lists');
 
@@ -1579,18 +1692,6 @@ function render() {
 }
 
 // ----------------------------------------------- settings and price lists
-
-/** A likely currency and units for where this computer is set up. Only used
-    to fill in the first-run screen, where you can change them. */
-function localeGuess() {
-  const region = ((navigator.language || '').split('-')[1] || '').toUpperCase();
-  const guess = {};
-  if (region === 'GB') guess.currency = '£';
-  else if ('AT BE CY DE EE ES FI FR GR HR IE IT LT LU LV MT NL PT SI SK'.split(' ').includes(region)) guess.currency = '€';
-  else if (['US', 'CA', 'AU', 'NZ'].includes(region)) guess.currency = '$';
-  if (region === 'US') guess.units = 'in';
-  return guess;
-}
 
 const today = () => {
   const d = new Date();
@@ -1790,10 +1891,10 @@ function syncSetup() {
 function openSetup(first, toPrices = false) {
   if (S.setup) return;
   // What the form starts with: your saved choices. On first run that is the
-  // board you already have, if any, or a guess from the computer's region.
+  // board you already have, if any, or else dollars, millimetres and sawn
+  // sizes, which the first-run screen lets you change.
   const start = { currency: S.prefs.currency, units: S.prefs.units, order_by: S.prefs.order_by, tax_pct: S.prefs.tax_pct, check_updates: S.prefs.check_updates !== false };
   if (first && S.savedSlug) Object.assign(start, { units: S.project.units, order_by: S.project.order_by, tax_pct: S.project.settings.vat_pct });
-  else if (first && !S.boards.length) Object.assign(start, localeGuess());
   S.setup = { first, start, draft: { ...start }, picks: null, site: '' };
   const dlg = $('#setup');
   dlg.innerHTML = `<div class="guide-head">
@@ -1806,7 +1907,7 @@ function openSetup(first, toPrices = false) {
     <div class="set-body">
       <p class="help">${
         first
-          ? 'A few quick choices so the numbers suit you and your mill. You can skip them: everything here can be changed later under Settings.'
+          ? 'A few quick choices so the numbers suit you and your mill. You can skip them: everything here can be changed later under Settings.</p><p class="help set-warn"><b>Check the numbers before you buy timber or cut it.</b> End Grain Calc is free and can be wrong, and it comes with no warranty. The About page of the Guide says more.'
           : 'The currency symbol changes everywhere. The other three are what a new board starts with. A board you have already made keeps its own, and you can change them on the board itself.'
       }</p>
       <div class="set-grid">
@@ -2056,14 +2157,23 @@ function renderMenu() {
 function buildChrome() {
   $('#save').addEventListener('click', () => save());
 
-  // The guide: a picture of how a board goes together, and what the words mean.
+  // The guide: pages on how a board goes together, how to use the app, and
+  // what the words mean.
   const guide = $('#guide');
-  $('#guide-btn').addEventListener('click', () => guide.showModal());
+  buildGuide();
+  $('#guide-btn').addEventListener('click', () => {
+    fillGuide();
+    guide.showModal();
+  });
   $('#guide-close').addEventListener('click', () => guide.close());
   $('#guide-print').addEventListener('click', () => printPage('guide'));
   guide.addEventListener('click', (e) => e.target === guide && guide.close());
   // In the app window a link would replace the designer, so the window is
   // asked to open the maker's site in the usual browser instead.
+  $('.fine a[data-external]').addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal(e.currentTarget.href);
+  });
   $('#credit').addEventListener('click', (e) => {
     if (!host) return;
     e.preventDefault();
@@ -2164,6 +2274,11 @@ function buildChrome() {
     if (e.target.dataset.price) return showTimber(e.target.dataset.price, '.t-price input');
     if (e.target.dataset.sawn) return showTimber(e.target.dataset.sawn, '.sawn-add');
     if (e.target.dataset.settings) return openSetup(false, true);
+    if (e.target.dataset.allow) return goToAllowance(e.target.dataset.allow);
+    if (e.target.dataset.notes !== undefined) {
+      S.notesOpen = !S.notesOpen;
+      return renderResults();
+    }
     if (e.target.id === 'print-lists') return printPage('lists');
     if (e.target.id !== 'copy-order') return;
     toast((await copyText(orderText())) ? 'Order copied' : "Couldn't reach the clipboard. Use Print these lists instead.");
@@ -2218,6 +2333,8 @@ async function init() {
   buildSetup();
   try {
     [S.info, S.library, S.boards, S.mill] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/library'), api('GET', '/api/boards'), api('GET', '/api/mill')]);
+    $('#app-version').textContent = `version ${S.info.version}`;
+    fillGuide();
     S.prefs = await api('GET', '/api/prefs');
     for (const t of S.library) t.sawn = t.sawn || [];
   } catch (e) {

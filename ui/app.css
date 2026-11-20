@@ -41,6 +41,7 @@ h2 {
 h3 { font: 700 15px/1.2 var(--num); margin: 0 0 6px; }
 p { margin: 0 0 10px; }
 .help { color: var(--ink-2); font-size: 13px; margin-bottom: 10px; }
+.help.set-warn { margin-top: -2px; padding: 8px 12px; background: var(--cut-wash); border-left: 3px solid var(--cut); border-radius: 0 4px 4px 0; color: var(--ink); }
 
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -267,6 +268,10 @@ details summary { cursor: pointer; color: var(--steel); font-weight: 500; paddin
 .credit-words { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; line-height: 1.2; }
 .credit-name { height: 13px; width: auto; align-self: flex-start; color: var(--ink); }
 .credit .heart { color: var(--cut); }
+/* The licence, quietly, under the maker's credit. */
+.fine { margin: -14px 18px 18px 68px; font-size: 11.5px; color: var(--ink-2); opacity: 0.8; }
+.fine a { color: inherit; }
+.fine a:hover { color: var(--ink); }
 
 /* ----------------------------------------------------------------- board */
 
@@ -414,6 +419,13 @@ td.n button.link { font: 14px var(--ui); }
 .totals b.quiet { font-size: 26px; line-height: 38px; color: var(--ink-2); }
 .results p.acts { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* The engine's notes about a board, gathered in one small box. */
+.notes { margin: 10px 0 0; padding: 7px 12px 8px; border-left: 4px solid var(--tape-deep); background: var(--tape-wash); border-radius: 0 4px 4px 0; font-size: 12.5px; line-height: 1.4; }
+.notes-head { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 3px; }
+.notes ul { margin: 0; padding-left: 16px; }
+.notes > p:only-child { margin: 0; }
+.notes li + li { margin-top: 3px; }
+.notes:not(.open) li.more { display: none; }
 .warn { padding: 8px 12px; margin: 10px 0 0; border-left: 4px solid var(--tape-deep); background: var(--tape-wash); border-radius: 0 4px 4px 0; font-size: 13px; }
 
 table { width: 100%; border-collapse: collapse; }
@@ -469,6 +481,32 @@ ol.steps li { margin-bottom: 5px; }
   box-shadow: 0 24px 60px rgba(18, 28, 35, 0.35);
 }
 #guide::backdrop, #setup::backdrop { background: rgba(28, 41, 49, 0.45); }
+/* The heading and the page tabs stay put while a page scrolls. */
+#guide { padding: 0; height: min(760px, calc(100vh - 48px)); }
+#guide[open] { display: flex; flex-direction: column; }
+#guide .guide-head { margin: 0; padding: 18px 26px 10px; }
+.guide-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 22px; border-bottom: 1px solid var(--line); }
+.guide-tabs button { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 8px 8px 7px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+.guide-tabs button:hover { color: var(--ink); }
+.guide-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--tape); }
+.guide-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 26px 26px; }
+.guide-page[hidden] { display: none; }
+.guide-page h3 { margin: 0 0 12px; font: 700 20px var(--num); }
+.guide-page h4 { margin: 20px 0 6px; font: 700 15.5px var(--num); }
+.guide-page > p, .guide-page li { font-size: 13.5px; line-height: 1.5; max-width: 78ch; }
+.guide-page a { color: var(--steel); }
+.guide-page code { font-size: 12.5px; background: var(--bench); padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+.guide-how { display: grid; gap: 12px; margin: 0; }
+.guide-how > div { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 2px 18px; }
+.guide-how dt { font: 700 15px var(--num); }
+.guide-how dd { margin: 0; font-size: 13.5px; line-height: 1.5; max-width: 72ch; }
+.guide-how ol { margin: 6px 0 0; padding-left: 20px; }
+.guide-points { margin: 0; padding-left: 20px; }
+.guide-points li + li { margin-top: 5px; }
+.guide-page .chip { display: inline-flex; vertical-align: baseline; }
+.guide-note.warn { margin: 0 0 18px; background: var(--cut-wash); border-left-color: var(--cut); }
+.guide-next { display: flex; justify-content: flex-end; margin: 26px 0 0; padding-top: 14px; border-top: 1px solid var(--line-2); }
+@media (max-width: 760px) { .guide-how > div { grid-template-columns: minmax(0, 1fr); } }
 .guide-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
 .guide-head h2 { margin: 0; font-size: 22px; }
 .guide-acts { display: flex; gap: 8px; flex: none; }
@@ -477,7 +515,7 @@ ol.steps li { margin-bottom: 5px; }
 .guide-steps svg { display: block; width: 100%; height: auto; background: var(--bench); border-radius: 4px; }
 .guide-steps p { margin: 8px 0 0; font-size: 13px; line-height: 1.4; }
 .guide-steps p::before { content: counter(step) ". "; font: 700 15px var(--num); }
-.guide-note { margin: -8px 0 24px; padding: 10px 14px; background: var(--tape-wash); border-left: 4px solid var(--tape); border-radius: 0 4px 4px 0; font-size: 13px; line-height: 1.45; }
+.guide-note { margin: 0 0 18px; padding: 10px 14px; background: var(--tape-wash); border-left: 4px solid var(--tape); border-radius: 0 4px 4px 0; font-size: 13px; line-height: 1.45; }
 .guide-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; margin: 0; }
 .guide-terms dt { font: 700 16px var(--num); }
 .guide-terms dd { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); max-width: 62ch; }
@@ -558,6 +596,7 @@ ol.steps li { margin-bottom: 5px; }
   .results > section { clear: both; margin-top: 0; padding-top: 18px; }
   .results > section:last-child { break-inside: avoid; }
   .sheet-head { margin: 0 0 14px; }
+  .sheet-foot { clear: both; margin: 18px 0 0; padding-top: 6px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--ink-2); }
   .totals { flex-wrap: wrap; gap: 10px 24px; }
   .totals b { font-size: 30px; }
   /* Tinted boxes keep to their own side of the picture. */
@@ -572,15 +611,25 @@ ol.steps li { margin-bottom: 5px; }
      what follows it, a table line and its detail, and each glue-up. */
   h2, h3, .sec-head, .sub-head, .help, .chips-cap { break-after: avoid; }
   p { break-inside: avoid; orphans: 3; widows: 3; }
-  tr, .panel, .order-total, .totals, .issue, .warn, ol.steps li, table.sums { break-inside: avoid; }
+  tr, .panel, .order-total, .totals, .issue, .warn, .notes, ol.steps li, table.sums { break-inside: avoid; }
+  .notes li.more { display: list-item !important; }
   tr.main { break-after: avoid; }
   thead { display: table-header-group; }
 
   /* Printing the guide instead: only the guide, laid out as a plain page. */
   body[data-print="guide"] > :not(#guide) { display: none !important; }
   body[data-print="guide"] #guide { display: block !important; position: static; width: auto; max-height: none; margin: 0; padding: 0; border: 0; box-shadow: none; }
-  body[data-print="guide"] .guide-acts { display: none; }
-  body[data-print="guide"] .guide-steps li, body[data-print="guide"] .guide-terms div { break-inside: avoid; }
+  body[data-print="guide"] .guide-acts, body[data-print="guide"] .guide-tabs, body[data-print="guide"] .guide-next { display: none !important; }
+  body[data-print="guide"] .guide-body { overflow: visible; padding: 0; }
+  body[data-print="guide"] #guide .guide-head { padding: 0 0 10px; border-bottom: 2px solid var(--ink); margin-bottom: 14px; }
+  body[data-print="guide"] .guide-steps { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  body[data-print="guide"] .guide-steps p { font-size: 11px; }
+  body[data-print="guide"] .guide-how > div { grid-template-columns: 34mm minmax(0, 1fr); }
+  body[data-print="guide"] .guide-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-print="guide"] .guide-page { margin-bottom: 24px; }
+  body[data-print="guide"] .guide-page, body[data-print="guide"] .guide-page[hidden] { display: block !important; margin-bottom: 18px; }
+  body[data-print="guide"] .guide-page h3, body[data-print="guide"] .guide-page h4 { break-after: avoid; }
+  body[data-print="guide"] .guide-steps li, body[data-print="guide"] .guide-terms div, body[data-print="guide"] .guide-how > div, body[data-print="guide"] .guide-note { break-inside: avoid; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  The picture behind the Mac disk image's window: drag the app into
+  Applications, then how to open it the first time. The two icons are not
+  drawn here; Finder puts them on top, at the places set in settings.py.
+  The bottom 40 px are left plain, because Finder's title bar takes some of
+  the window's height and the exact amount varies.
+
+  To change it, edit this file and run scripts/make_dmg_background.sh, which
+  saves it as background.png and background@2x.png.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 660px; height: 460px; overflow: hidden; }
+  body {
+    position: relative;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    color: #1c2931;
+    background: #faf8f4;
+  }
+  /* A strip of tape along the top, as in the app. */
+  .tape { position: absolute; left: 0; right: 0; top: 0; height: 6px; background: #f5c518; }
+  .tape i { position: absolute; top: 0; width: 1px; height: 4px; background: rgba(27, 26, 16, 0.45); }
+
+  .drag { position: absolute; left: 236px; width: 188px; top: 92px; text-align: center; }
+  .drag b { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .drag svg { display: block; margin: 0 auto; }
+
+  .first { position: absolute; left: 0; right: 0; top: 226px; bottom: 0; padding: 18px 28px 0; background: #fff; border-top: 1px solid #e4dfd6; }
+  .first h2 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+  .first ol { margin: 0; padding-left: 18px; width: 304px; font-size: 12.5px; color: #3f4b53; }
+  .first li + li { margin-top: 4px; }
+  .first li b { color: #1c2931; font-weight: 600; }
+
+  /* A plain drawing of the row macOS shows in Privacy & Security. */
+  .mock { position: absolute; left: 364px; top: 42px; width: 244px; padding: 10px 12px; background: #f2f1ef; border-radius: 10px; font-size: 11.5px; color: #1d1d1f; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+  .mock .row { display: flex; align-items: center; gap: 10px; }
+  .mock .row span:first-child { flex: 1; }
+  .mock .btn { flex: none; white-space: nowrap; padding: 4px 9px; border-radius: 6px; background: #e3e2e0; font-weight: 500; position: relative; }
+  .mock .btn::after { content: ""; position: absolute; inset: -5px; border: 2.5px solid #f5c518; border-radius: 9px; }
+  .mock small { display: block; margin-top: 7px; padding-top: 6px; border-top: 1px solid #dcdad6; color: #86868b; font-size: 10px; }
+  .mock-head { position: absolute; left: 364px; top: 20px; font-size: 11px; color: #86868b; }
+
+</style>
+</head>
+<body>
+  <div class="tape" id="tape"></div>
+
+  <div class="drag">
+    <b>Drag into Applications</b>
+    <svg width="150" height="26" viewBox="0 0 150 26" aria-hidden="true"><path d="M4 13h136M128 3l12 10-12 10" fill="none" stroke="#1c2931" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+
+  <div class="first">
+    <h2>Opening it the first time</h2>
+    <ol>
+      <li>Open the app from Applications. When macOS says it can't check it, click <b>Done</b>.</li>
+      <li>Go to <b>System Settings &rsaquo; Privacy &amp; Security</b> and scroll down.</li>
+      <li>Click <b>Open Anyway</b>, then confirm. From then on it opens like any other app.</li>
+    </ol>
+    <div class="mock-head">System Settings &rsaquo; Privacy &amp; Security</div>
+    <div class="mock">
+      <div class="row"><span>&ldquo;End Grain Calc.app&rdquo; was blocked to protect your Mac.</span><span class="btn">Open Anyway</span></div>
+      <small>The app is free and not signed with a paid Apple certificate, so macOS asks once.</small>
+    </div>
+  </div>
+
+  <script>
+    // Ticks along the tape, every 10 px.
+    const tape = document.getElementById('tape');
+    for (let x = 10; x < 660; x += 10) {
+      const i = document.createElement('i');
+      i.style.left = x + 'px';
+      if (x % 50 === 0) i.style.height = '6px';
+      tape.append(i);
+    }
+  </script>
+</body>
+</html>
