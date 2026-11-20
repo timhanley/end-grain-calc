@@ -66,9 +66,12 @@ enum Host {
     Title(String),
     /// Open the maker's website in the usual browser.
     OpenSite,
+    /// Open the page where new versions are published.
+    OpenReleases,
 }
 
 const MAKER_SITE: &str = "https://teajayhan.com";
+const RELEASES_PAGE: &str = "https://github.com/timhanley/end-grain-calc/releases/latest";
 
 #[cfg(target_os = "macos")]
 fn mac_menu(proxy: tao::event_loop::EventLoopProxy<Host>) -> muda::Menu {
@@ -165,16 +168,26 @@ pub fn run(app: App) -> ! {
         .with_inner_size(LogicalSize::new(1480.0, 940.0))
         .with_min_inner_size(LogicalSize::new(860.0, 600.0))
         .build(&event_loop)
-        .unwrap_or_else(|e| {
-            eprintln!("Couldn't open a window: {e}. Try --browser.");
-            std::process::exit(1)
-        });
+        .unwrap_or_else(|e| crate::fatal(&format!("Couldn't open a window: {e}. Try --browser.")));
 
     #[cfg(target_os = "macos")]
     let _menu = mac_menu(event_loop.create_proxy());
 
+    // Windows' web view keeps its own files beside the program unless told
+    // otherwise, which fails in Program Files and litters Downloads.
+    #[cfg(target_os = "windows")]
+    let mut web_context = wry::WebContext::new(std::env::var_os("LOCALAPPDATA").map(|dir| {
+        std::path::PathBuf::from(dir)
+            .join("End Grain Calc")
+            .join("WebView2")
+    }));
+
     let from_page = event_loop.create_proxy();
-    let builder = WebViewBuilder::new()
+    #[cfg(target_os = "windows")]
+    let builder = WebViewBuilder::new_with_web_context(&mut web_context);
+    #[cfg(not(target_os = "windows"))]
+    let builder = WebViewBuilder::new();
+    let builder = builder
         .with_custom_protocol("endgrain".into(), move |_id, request| {
             let body = String::from_utf8_lossy(request.body());
             let reply = app.handle(request.method().as_str(), request.uri().path(), &body);
@@ -192,6 +205,7 @@ pub fn run(app: App) -> ! {
                 "dirty:1" => Host::Dirty(true),
                 "dirty:0" => Host::Dirty(false),
                 "open-site" => Host::OpenSite,
+                "open-releases" => Host::OpenReleases,
                 other => match other.strip_prefix("title:") {
                     Some(title) => Host::Title(title.to_string()),
                     None => return,
@@ -210,8 +224,15 @@ pub fn run(app: App) -> ! {
         builder.build_gtk(window.default_vbox().expect("window has a GTK box"))
     };
     let webview = built.unwrap_or_else(|e| {
-        eprintln!("Couldn't start the web view: {e}. Try --browser.");
-        std::process::exit(1)
+        crate::fatal(&format!(
+            "Couldn't start the web view: {e}.{}",
+            if cfg!(windows) {
+                " It needs Microsoft's WebView2 Runtime, which you can download from \
+                 https://developer.microsoft.com/microsoft-edge/webview2/"
+            } else {
+                " Try --browser."
+            }
+        ))
     });
 
     let mut dirty = false;
@@ -237,6 +258,7 @@ pub fn run(app: App) -> ! {
             Event::UserEvent(Host::Dirty(now)) => dirty = now,
             Event::UserEvent(Host::Title(title)) => window.set_title(&title),
             Event::UserEvent(Host::OpenSite) => crate::server::open_browser(MAKER_SITE),
+            Event::UserEvent(Host::OpenReleases) => crate::server::open_browser(RELEASES_PAGE),
             Event::UserEvent(Host::PrintLists) => {
                 let _ = webview.evaluate_script("window.endgrainPrintLists()");
             }

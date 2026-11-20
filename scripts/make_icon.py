@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Draws the app icon (a walnut and cherry end grain board) and packs it as
-assets/icon.icns. Only needs Python 3 and the sips/iconutil tools that ship
-with macOS. Run it again only if you change the drawing below."""
+assets/icon.icns for the Mac and assets/icon.ico for Windows. Only needs
+Python 3 and the sips/iconutil tools that ship with macOS. Run it again only
+if you change the drawing below; --ico-only remakes just the Windows icon
+from the existing assets/icon.png."""
 import math, os, struct, subprocess, sys, tempfile, zlib
 
 SIZE, INSET, RADIUS = 1024, 100, 185
@@ -59,12 +61,39 @@ def png(path):
                 + chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + chunk(b"IEND", b""))
 
 
+def ico(master, path):
+    """A Windows .ico holding PNG images at the sizes Windows asks for."""
+    sizes = (16, 24, 32, 48, 64, 128, 256)
+    images = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for size in sizes:
+            out = os.path.join(tmp, f"{size}.png")
+            subprocess.run(["sips", "-z", str(size), str(size), master, "--out", out],
+                           check=True, stdout=subprocess.DEVNULL)
+            with open(out, "rb") as f:
+                images.append(f.read())
+    head = struct.pack("<HHH", 0, 1, len(sizes))
+    offset = len(head) + 16 * len(sizes)
+    entries = b""
+    for size, data in zip(sizes, images):
+        # A size of 256 is written as 0.
+        entries += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(data), offset)
+        offset += len(data)
+    with open(path, "wb") as f:
+        f.write(head + entries + b"".join(images))
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = os.path.join(root, "assets")
     os.makedirs(out, exist_ok=True)
     master = os.path.join(out, "icon.png")
+    if "--ico-only" in sys.argv[1:]:
+        ico(master, os.path.join(out, "icon.ico"))
+        print("Wrote assets/icon.ico")
+        return 0
     png(master)
+    ico(master, os.path.join(out, "icon.ico"))
     with tempfile.TemporaryDirectory() as tmp:
         iconset = os.path.join(tmp, "icon.iconset")
         os.mkdir(iconset)
@@ -74,7 +103,7 @@ def main():
                 subprocess.run(["sips", "-z", str(size * scale), str(size * scale), master, "--out", os.path.join(iconset, name)],
                                check=True, stdout=subprocess.DEVNULL)
         subprocess.run(["iconutil", "-c", "icns", iconset, "-o", os.path.join(out, "icon.icns")], check=True)
-    print("Wrote assets/icon.png and assets/icon.icns")
+    print("Wrote assets/icon.png, assets/icon.icns and assets/icon.ico")
 
 
 if __name__ == "__main__":

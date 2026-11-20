@@ -104,6 +104,15 @@ button { cursor: pointer; }
 #name:focus { outline: none; border-bottom: 1px solid var(--tape); }
 #dirty { color: var(--tape); font-size: 13px; white-space: nowrap; }
 .bar-actions { display: flex; align-items: center; gap: 10px; }
+/* A newer version is out: quiet, but easy to spot in the dark header. */
+.btn.update { display: inline-flex; align-items: center; gap: 6px; background: transparent; border-color: var(--tape); color: var(--tape); white-space: nowrap; }
+.btn.update[hidden] { display: none; }
+.btn.update:hover { background: var(--tape); color: var(--tape-ink); }
+/* In a narrow window it shortens to the arrow and the number. */
+@media (max-width: 1180px) { .btn.update .wordy { display: none; } }
+/* Narrower still, the header keeps the logo but drops the app's name. */
+@media (max-width: 1000px) and (min-width: 821px) { .brand span { display: none; } }
+.btn.update svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .conflict {
   display: flex;
@@ -488,6 +497,7 @@ ol.steps li { margin-bottom: 5px; }
 .set-grid > label, .set-grid > span { padding-top: 5px; font-weight: 600; }
 .set-grid small { display: block; margin-top: 4px; color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
 .set-grid .seg { flex-wrap: wrap; }
+.set-check { display: inline-flex; align-items: center; gap: 8px; padding-top: 5px; font-weight: 400; cursor: pointer; }
 #set-currency { width: 52px; text-align: center; height: 30px; }
 #set-tax { width: 52px; height: 30px; }
 #set-prices { padding-top: 18px; border-top: 1px solid var(--line-2); }

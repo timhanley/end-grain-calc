@@ -28,7 +28,7 @@ board, and you shape it with your mouse.
 
 It is one small Rust program. It runs as an app in its own window on a Mac,
 Windows or Linux, or in your web browser, and does all the maths itself;
-nothing leaves your machine.
+nothing about you or your boards leaves your computer.
 
 - Works in millimetres or inches, and in any currency.
 - Orders timber by the board foot, or in sawn sizes by the metre for mills
@@ -43,16 +43,37 @@ not match its assumptions exactly. It comes with no warranty, and the author
 takes no responsibility for errors or for anything that follows from using
 it. See the [licence](#licence).
 
-There are no ready-made downloads yet, so for now it is built from source.
-That needs [Rust](https://rustup.rs) and a copy of this repository. Each
-section below has one script to run from the repository's folder.
+## Download
+
+- **Mac** (Apple silicon or Intel, macOS 11 or later):
+  [End-Grain-Calc-mac.dmg](https://github.com/timhanley/end-grain-calc/releases/latest/download/End-Grain-Calc-mac.dmg)
+- **Windows** (10 or 11):
+  [End-Grain-Calc-windows.exe](https://github.com/timhanley/end-grain-calc/releases/latest/download/End-Grain-Calc-windows.exe)
+
+Those two links always fetch the newest version, and the app shows a small
+button in its header when a newer one is out. Every version, with what
+changed, is on the [releases page](https://github.com/timhanley/end-grain-calc/releases).
+On Linux, [build it yourself](#build-the-linux-app).
+
+The apps are free and are not signed with a paid Apple or Microsoft
+certificate, so your computer asks you to allow them once:
+
+- **Mac.** Open the disk image and drag End Grain Calc into Applications,
+  then open it. macOS says it can't check the app: click Done. Open System
+  Settings, go to Privacy & Security, scroll down to the line about End Grain
+  Calc and click Open Anyway, then confirm. From then on it opens like any
+  other app.
+- **Windows.** Save the .exe wherever you like and double-click it. If Windows
+  shows "Windows protected your PC", click More info, then Run anyway. The
+  window is drawn by Microsoft's WebView2, which comes with Windows 11 and is
+  on almost every Windows 10 computer; if it is missing, the app says so and
+  where to get it.
 
 ## Contents
 
-- [Run it as a Mac app](#run-it-as-a-mac-app)
-- [Run it as a Windows app](#run-it-as-a-windows-app)
-- [Run it as a Linux app](#run-it-as-a-linux-app)
-- [Run it in a browser](#run-it-in-a-browser)
+- [Build it yourself](#build-it-yourself): [Mac](#build-the-mac-app),
+  [Windows](#build-the-windows-app), [Linux](#build-the-linux-app) or
+  [in a browser](#run-it-in-a-browser)
 - [First run and Settings](#first-run-and-settings)
 - [Designing a board](#designing-a-board)
 - [What you get](#what-you-get)
@@ -63,7 +84,13 @@ section below has one script to run from the repository's folder.
 - [Code, and other platforms](#code-and-other-platforms)
 - [Licence](#licence)
 
-## Run it as a Mac app
+## Build it yourself
+
+Building from source needs [Rust](https://rustup.rs) and a copy of this
+repository. Each section below has one script to run from the repository's
+folder.
+
+### Build the Mac app
 
 ```bash
 ./scripts/bundle-mac.sh
@@ -75,11 +102,14 @@ directly.
 
 The script signs the app only for the Mac it was run on, and builds it for
 that Mac's processor (Apple silicon or Intel), not both. On that Mac it opens
-like any other app. Copied to a different Mac, macOS may refuse to open it
-the first time: right-click it and choose Open, or on recent versions of
-macOS allow it under System Settings > Privacy & Security.
+like any other app. Copied to a different Mac, it needs allowing once, the
+same way as [the download](#download).
 
-## Run it as a Windows app
+`--universal` builds one app for both Apple silicon and Intel (it needs
+`rustup target add aarch64-apple-darwin x86_64-apple-darwin` first), and
+`--dmg` also packs it as a disk image. The downloads are built that way.
+
+### Build the Windows app
 
 ```bat
 scripts\build-windows.cmd
@@ -95,13 +125,9 @@ move that folder wherever you like and make a shortcut to it.
 - **Not signed.** Copied to a different PC, Windows may show "Windows
   protected your PC" the first time: choose "More info", then "Run anyway".
 - **No menu bar.** Everything is on buttons in the window, and the usual
-  shortcuts work (Ctrl+S, Ctrl+Z, Ctrl+C and so on). The .exe does not have
-  its own icon yet.
-- **Not tried on a real PC yet.** The Windows code compiles, but nobody has
-  run it. If it does not start, [run it in a browser](#run-it-in-a-browser)
-  instead, and please say what happened.
+  shortcuts work (Ctrl+S, Ctrl+Z, Ctrl+C and so on).
 
-## Run it as a Linux app
+### Build the Linux app
 
 ```bash
 ./scripts/build-linux.sh
@@ -120,16 +146,15 @@ your boards alone.
 
 - **What it needs.** The window is drawn by WebKitGTK, so the WebKitGTK 4.1
   (version 2.40 or newer) and GTK 3 development files have to be installed
-  to build it. If they are
-  missing the script stops and gives the install line for Debian and Ubuntu,
-  Fedora, and Arch.
+  to build it. If they are missing the script stops and gives the install
+  line for Debian and Ubuntu, Fedora, and Arch.
 - **No menu bar.** Everything is on buttons in the window, and the usual
   shortcuts work.
 - **Lightly tested.** It has been built, installed and started on Debian 12
   in a container with a virtual screen, where the window loaded the designer
   and calculated a board. Nobody has used it on a real Linux desktop yet.
 
-## Run it in a browser
+### Run it in a browser
 
 ```bash
 cargo run --release -- --browser
@@ -157,6 +182,13 @@ four things, all of which can be skipped and changed later under **Settings**:
 the currency symbol, millimetres or inches, whether your mill sells by the
 board foot or in sawn sizes by the metre, and the tax to add. The currency
 symbol applies everywhere; the other three are what a new board starts with.
+
+**New versions.** When it starts, the app asks GitHub which version is the
+latest and, if it is newer than yours, shows a small "Version … is out"
+button in the header that opens the download page. That question is the only
+thing the app sends over the internet, and nothing about you or your boards
+goes with it. Untick "Tell me when a new version is out" in Settings to stop
+it.
 
 ## Designing a board
 
@@ -313,6 +345,10 @@ folder (on Windows, `.endgrain` in your user folder, such as
 - `mill-prices.json`: your mill's price list, once imported. You can also put
   a file there yourself
 
+On Windows the window's web view also keeps a few files of its own in
+`%LOCALAPPDATA%\End Grain Calc`. They hold nothing you made and can be
+deleted.
+
 ## How the numbers are worked out
 
 The board is built the usual way: strips are glued into a panel, the panel is
@@ -363,7 +399,9 @@ board's units.
 - `ui/`: the designer (HTML, CSS, JS), built into the binary
 - `scripts/bundle-mac.sh`, `scripts/build-windows.cmd`,
   `scripts/build-linux.sh`: build the app for each system
-- `scripts/make_icon.py`: draws the app icon
+- `scripts/make_icon.py`: draws the app icon for the Mac and Windows
+- `build.rs`: puts the icon and the app's name into the Windows .exe
+- `.github/workflows/release.yml`: builds the Mac and Windows downloads
 - `examples/hill-sawmill.json`: an example price list for an invented mill,
   also used by the tests. It is not built into the app
 
@@ -371,8 +409,8 @@ The layers are split so the same code can go further later:
 
 - **Windows and Linux.** tao and wry cover both (WebView2 and WebKitGTK), and
   each has a build script above. Still missing: an installer or package for
-  each, a menu bar (only macOS has one here), an icon inside the Windows
-  .exe, and testing on real machines.
+  each, a menu bar (only macOS has one here), and use on a real Linux
+  desktop.
   `cargo build --release --no-default-features` gives a browser-only binary
   with no window libraries at all.
 - **A hosted web version.** The engine is written to compile to WebAssembly,
@@ -380,6 +418,21 @@ The layers are split so the same code can go further later:
   A web build would swap that function for direct calls to
   `endgrain::calculate_json` and keep boards in the browser's storage instead
   of files. This has not been built or compiled yet.
+
+### Publishing a new version
+
+1. Change `version` in `Cargo.toml` (for example to 0.3.0) and commit it.
+2. Tag that commit with what changed, and push the tag:
+
+   ```bash
+   git tag -a v0.3.0 -m "End Grain Calc 0.3.0" -m "What changed, in a line or a list."
+   git push origin v0.3.0
+   ```
+
+GitHub then builds the Mac and Windows apps, tests them, and publishes them
+as a release with the notes from `.github/release-notes.md` under what
+changed. The download links above move to the new version by themselves,
+and copies of the app that check for new versions show their button.
 
 ## Licence
 

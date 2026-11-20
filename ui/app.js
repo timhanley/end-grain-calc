@@ -53,7 +53,7 @@ const S = {
   boards: [],
   mill: null, // your mill's price list, once one has been imported
   // The currency symbol, and what a new board starts with.
-  prefs: { currency: '£', units: 'mm', order_by: 'bf', tax_pct: 0, setup_done: true },
+  prefs: { currency: '£', units: 'mm', order_by: 'bf', tax_pct: 0, setup_done: true, check_updates: true },
   setup: null, // the settings screen while it is open
   info: null,
   pending: null, // what to do once unsaved changes are dealt with
@@ -1791,7 +1791,7 @@ function openSetup(first, toPrices = false) {
   if (S.setup) return;
   // What the form starts with: your saved choices. On first run that is the
   // board you already have, if any, or a guess from the computer's region.
-  const start = { currency: S.prefs.currency, units: S.prefs.units, order_by: S.prefs.order_by, tax_pct: S.prefs.tax_pct };
+  const start = { currency: S.prefs.currency, units: S.prefs.units, order_by: S.prefs.order_by, tax_pct: S.prefs.tax_pct, check_updates: S.prefs.check_updates !== false };
   if (first && S.savedSlug) Object.assign(start, { units: S.project.units, order_by: S.project.order_by, tax_pct: S.project.settings.vat_pct });
   else if (first && !S.boards.length) Object.assign(start, localeGuess());
   S.setup = { first, start, draft: { ...start }, picks: null, site: '' };
@@ -1806,7 +1806,7 @@ function openSetup(first, toPrices = false) {
     <div class="set-body">
       <p class="help">${
         first
-          ? 'Four quick choices so the numbers suit you and your mill. You can skip them: everything here can be changed later under Settings.'
+          ? 'A few quick choices so the numbers suit you and your mill. You can skip them: everything here can be changed later under Settings.'
           : 'The currency symbol changes everywhere. The other three are what a new board starts with. A board you have already made keeps its own, and you can change them on the board itself.'
       }</p>
       <div class="set-grid">
@@ -1818,6 +1818,8 @@ function openSetup(first, toPrices = false) {
         <div><div class="seg" id="set-order" role="group" aria-labelledby="set-order-l"><button type="button" data-v="bf">By the board foot</button><button type="button" data-v="sawn">In sawn sizes, by the metre</button></div><small>Sets how the order list is written. You can switch on any board.</small></div>
         <label for="set-tax">Tax on timber</label>
         <div><input id="set-tax" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${start.tax_pct}"> %<small>VAT, GST or sales tax, added to orders by sawn size. Leave it at 0 if the prices you enter already include tax.</small></div>
+        <span>New versions</span>
+        <div><label class="set-check"><input id="set-updates" type="checkbox"${start.check_updates ? ' checked' : ''}> Tell me when a new version is out</label><small>When the app starts it asks GitHub which version is the latest. Nothing about you or your boards is sent.</small></div>
       </div>
       <section id="set-prices"></section>
     </div>`;
@@ -1841,6 +1843,7 @@ async function closeSetup(how) {
   }
   S.setup = null;
   $('#setup').close();
+  if (S.prefs.check_updates === false) $('#update').hidden = true;
   // On first run the sample board is redrawn in the units you chose.
   if (st.first && !S.savedSlug && !isDirty()) setProject(sampleProject(), null);
   else {
@@ -1881,6 +1884,7 @@ function buildSetup() {
     const el = e.target;
     if (el.id === 'set-currency') st.draft.currency = el.value;
     else if (el.id === 'set-site') st.site = el.value;
+    else if (el.id === 'set-updates') st.draft.check_updates = el.checked;
     else if (el.id === 'set-tax') {
       const v = parseFloat(el.value.replace(',', '.'));
       st.draft.tax_pct = isFinite(v) && v >= 0 && v <= 100 ? v : 0;
@@ -1891,6 +1895,58 @@ function buildSetup() {
     const text = await e.target.files[0].text().catch(() => '');
     $('#set-json').value = text;
     importMill(text);
+  });
+}
+
+// ------------------------------------------------------------ new versions
+
+// New versions are published on GitHub. At start-up the page asks GitHub's
+// public API which one is the latest; nothing about you or your boards goes
+// with the question, and it can be turned off under Settings.
+const RELEASES = 'https://github.com/timhanley/end-grain-calc/releases/latest';
+const LATEST_RELEASE = 'https://api.github.com/repos/timhanley/end-grain-calc/releases/latest';
+
+/** "v0.10.2" or "0.10.2" as [0, 10, 2], or null for anything else. */
+function versionParts(v) {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(v || '').trim());
+  return m ? m.slice(1).map(Number) : null;
+}
+
+/** Is version a later than version b? */
+function isLater(a, b) {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
+
+/** Show the header's small button if GitHub has a newer version. Silent if
+    the check is off, the computer is offline or GitHub doesn't answer. */
+async function checkForUpdate() {
+  const mine = versionParts(S.info && S.info.version);
+  if (S.prefs.check_updates === false || !mine) return;
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 10000);
+  try {
+    const res = await fetch(LATEST_RELEASE, { signal: stop.signal, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!res.ok) return;
+    const latest = versionParts((await res.json()).tag_name);
+    if (!latest || !isLater(latest, mine) || S.prefs.check_updates === false) return;
+    const b = $('#update');
+    b.innerHTML = `<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.5v8M3.5 6 7 9.5 10.5 6M2 12.5h10"/></svg><span class="wordy">Version </span>${latest.join('.')}<span class="wordy"> is out</span>`;
+    b.title = `You have version ${mine.join('.')}. Open the download page to see what's new.`;
+    b.hidden = false;
+  } catch (_) {
+    /* offline, or GitHub didn't answer: say nothing */
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildUpdate() {
+  // In the app window a link would replace the designer, so the window is
+  // asked to open the download page in the usual browser instead.
+  $('#update').addEventListener('click', () => {
+    if (host) host('open-releases');
+    else window.open(RELEASES, '_blank', 'noopener');
   });
 }
 
@@ -2158,6 +2214,7 @@ async function init() {
   buildPop();
   buildChrome();
   buildHistory();
+  buildUpdate();
   buildSetup();
   try {
     [S.info, S.library, S.boards, S.mill] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/library'), api('GET', '/api/boards'), api('GET', '/api/mill')]);
@@ -2180,6 +2237,7 @@ async function init() {
   else setProject(sampleProject(), null);
   // First run: a short welcome that asks the basics and can be skipped.
   if (!S.prefs.setup_done) openSetup(true);
+  checkForUpdate();
 }
 
 init();

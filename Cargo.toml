@@ -1,6 +1,6 @@
 [package]
 name = "endgrain"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "End grain chopping board calculator: visual layout, timber order list and milled cutting list"
 authors = ["TEA JAY HAN"]
@@ -30,6 +30,10 @@ tao = { version = "0.37.2", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "0.21.2", optional = true }
+
+# Puts the icon and name into the Windows .exe (see build.rs).
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.34"
 
 [profile.release]
 opt-level = 3

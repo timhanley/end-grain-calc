@@ -26,6 +26,8 @@ pub struct Prefs {
     pub tax_pct: f64,
     /// False until the first-run setup has been finished or skipped.
     pub setup_done: bool,
+    /// Ask GitHub at start-up whether a newer version is out.
+    pub check_updates: bool,
 }
 
 impl Default for Prefs {
@@ -36,6 +38,7 @@ impl Default for Prefs {
             order_by: OrderBy::Bf,
             tax_pct: 0.0,
             setup_done: false,
+            check_updates: true,
         }
     }
 }
@@ -278,6 +281,7 @@ mod tests {
         fs::write(dir.join("prefs.json"), r#"{ "currency": "$" }"#).unwrap();
         let old = store.prefs();
         assert!(old.currency == "$" && !old.setup_done && old.order_by == OrderBy::Bf);
+        assert!(old.check_updates, "older files check for new versions");
 
         let chosen = Prefs {
             currency: "$".into(),
@@ -285,11 +289,13 @@ mod tests {
             order_by: OrderBy::Sawn,
             tax_pct: 250.0,
             setup_done: true,
+            check_updates: false,
         }
         .cleaned();
         store.save_prefs(&chosen).unwrap();
         let back = store.prefs();
         assert!(back.setup_done && back.units == Units::In && back.order_by == OrderBy::Sawn);
+        assert!(!back.check_updates);
         assert_eq!(back.tax_pct, 0.0, "tax outside 0 to 100 is dropped");
         let _ = fs::remove_dir_all(dir);
     }

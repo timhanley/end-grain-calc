@@ -106,13 +106,46 @@ fn use_parent_console() {
     }
 }
 
+/// Stop with a message. On Windows the app has no console to print to when
+/// it is opened by double-click, so the message is shown in a box as well.
+pub fn fatal(message: &str) -> ! {
+    eprintln!("{message}");
+    #[cfg(all(windows, feature = "window"))]
+    {
+        #[link(name = "user32")]
+        extern "system" {
+            fn MessageBoxW(
+                window: *mut std::ffi::c_void,
+                text: *const u16,
+                caption: *const u16,
+                kind: u32,
+            ) -> i32;
+        }
+        const MB_ICONERROR: u32 = 0x10;
+        let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+        let (text, caption) = (wide(message), wide("End Grain Calc"));
+        // SAFETY: both strings are NUL-terminated and outlive the call.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                caption.as_ptr(),
+                MB_ICONERROR,
+            );
+        }
+    }
+    std::process::exit(1)
+}
+
 fn main() {
     #[cfg(all(windows, feature = "window"))]
     use_parent_console();
     let cfg = parse_args();
     let store = Store::open(cfg.data.clone()).unwrap_or_else(|e| {
-        eprintln!("Couldn't use {} for saved boards: {e}", cfg.data.display());
-        std::process::exit(1)
+        fatal(&format!(
+            "Couldn't use {} for saved boards: {e}",
+            cfg.data.display()
+        ))
     });
     let app = App {
         store,
