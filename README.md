@@ -1,10 +1,30 @@
 # End Grain Calc
 
-Lay out an end grain chopping board on screen, then get everything you need
-to build it: the order for the mill, a milled cutting list, a drawing of each
-glue-up and the order of work, with the cost.
+Design an end grain chopping board by painting it, cell by cell, with the
+timbers you have in mind, and watch the board come to life as you go.
+
+Click or drag to paint. Drag the joins to resize rows and columns. As you
+play, it works out the timber to order from the mill, the cutting list, every
+glue-up and what it'll all cost.
 
 ![The designer: timbers on the left, the board in the middle with its yellow tapes, and the order from the mill on the right](docs/screenshots/designer.webp)
+
+## Design it the way you'd sketch it
+
+Most end grain calculators hand you a form full of numbers and leave you to
+imagine the board. End Grain Calc works the other way round: you see the
+board, and you shape it with your mouse.
+
+- **Paint.** Pick a timber and click a cell, or drag across a whole run of
+  them. Keys 1 to 9 swap timbers in a flash.
+- **Drag to size.** Pull the joins between rows and columns on the yellow
+  tapes, or drag a whole row along to move it.
+- **Pin what matters.** Type or drag a size and it's pinned; everything else
+  shares what's left over.
+- **Change your mind.** Undo and redo everything, so there's no harm in
+  trying something bold.
+
+## What else it does
 
 It is one small Rust program. It runs as an app in its own window on a Mac,
 Windows or Linux, or in your web browser, and does all the maths itself;
