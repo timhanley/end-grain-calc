@@ -86,6 +86,11 @@ pub struct Settings {
     /// Sawn sizes: order strips that are too big for every sawn size of
     /// their timber by the board foot, instead of leaving them off.
     pub sawn_big_as_bf: bool,
+    /// The mill this board is ordered from (its id), if one was chosen.
+    /// The calculation itself never looks at it: the page sends the prices
+    /// and step of the chosen mill.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mill: String,
 }
 
 impl Default for Settings {
@@ -107,6 +112,7 @@ impl Default for Settings {
             sawn_whole: false,
             sawn_whole_waste: 50.0,
             sawn_big_as_bf: false,
+            mill: String::new(),
         }
     }
 }
@@ -152,6 +158,7 @@ impl Settings {
             sawn_whole: self.sawn_whole,
             sawn_whole_waste: p(self.sawn_whole_waste).min(100.0),
             sawn_big_as_bf: self.sawn_big_as_bf,
+            mill: self.mill.clone(),
         }
     }
 }
@@ -179,7 +186,50 @@ pub struct Project {
     pub settings: Settings,
 }
 
-/// A sawn section the mill sells by the metre, e.g. 50 x 150 mm.
+pub const MM_PER_INCH: f64 = 25.4;
+pub const M_PER_FOOT: f64 = 0.3048;
+
+/// The unit a mill gives the length of its sawn boards in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lengths {
+    /// Metres.
+    #[default]
+    M,
+    /// Feet.
+    Ft,
+    /// Inches, for boards sold in set lengths such as 36" or 48".
+    In,
+}
+
+impl Lengths {
+    pub fn metres(self, v: f64) -> f64 {
+        match self {
+            Lengths::M => v,
+            Lengths::Ft => v * M_PER_FOOT,
+            Lengths::In => v * MM_PER_INCH / 1000.0,
+        }
+    }
+}
+
+/// One length a mill stocks a sawn size in, already cut, with its price.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetLength {
+    /// The board's length in metres.
+    #[serde(default)]
+    pub length_m: f64,
+    /// Price of one board this long, before tax.
+    #[serde(default)]
+    pub price: f64,
+    /// The length as a price list gave it, in the list's own unit. It
+    /// becomes `length_m` when the list is tidied, and is never written out.
+    #[serde(default, skip_serializing)]
+    pub length: f64,
+}
+
+/// A sawn section the mill sells by length, e.g. 50 x 150 mm or 1 x 6 in.
+/// It is always kept in millimetres and per metre; the page shows it in the
+/// mill's own units.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SawnSize {
     /// Nominal sawn thickness and width in millimetres.
@@ -188,6 +238,63 @@ pub struct SawnSize {
     /// Price per metre of length, before tax.
     #[serde(default)]
     pub price_per_m: f64,
+    /// A price per foot, read from a price list that gives one. It becomes
+    /// `price_per_m` when the list is tidied, and is never written out.
+    #[serde(default, skip_serializing)]
+    pub price_per_ft: f64,
+    /// For a mill that sells this size only in set lengths (36", 2.4 m...),
+    /// each length it stocks and its price. When there are any, they are
+    /// the price and `price_per_m` is not used.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lengths: Vec<SetLength>,
+}
+
+impl SawnSize {
+    /// The set lengths with a usable length and price, shortest first.
+    pub fn stocked(&self) -> Vec<&SetLength> {
+        let mut v: Vec<&SetLength> = self
+            .lengths
+            .iter()
+            .filter(|l| {
+                l.length_m > 0.0 && l.length_m.is_finite() && l.price > 0.0 && l.price.is_finite()
+            })
+            .collect();
+        v.sort_by(|a, b| a.length_m.total_cmp(&b.length_m));
+        v
+    }
+
+    /// Sold only in set lengths.
+    pub fn in_set_lengths(&self) -> bool {
+        !self.stocked().is_empty()
+    }
+
+    /// Has a price of either kind.
+    pub fn priced(&self) -> bool {
+        self.price_per_m > 0.0 || self.in_set_lengths()
+    }
+
+    /// A price per metre to compare sizes by: the price per metre, or for
+    /// set lengths the cheapest per metre of them.
+    pub fn rate(&self) -> f64 {
+        match self
+            .stocked()
+            .iter()
+            .map(|l| l.price / l.length_m)
+            .reduce(f64::min)
+        {
+            Some(r) => r,
+            None => self.price_per_m,
+        }
+    }
+
+    /// Whether a strip this long (millimetres) can come out of one board.
+    /// Sizes cut to length can always supply it.
+    pub fn long_enough(&self, len_mm: f64) -> bool {
+        match self.stocked().last() {
+            Some(l) => l.length_m * 1000.0 + 0.01 >= len_mm,
+            None => true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -240,6 +347,18 @@ pub struct MillCatalogue {
     #[serde(default = "default_step")]
     pub step_m: f64,
     pub timbers: Vec<MillTimber>,
+    /// A list from outside can give its sizes in inches, its lengths in
+    /// feet, its step in feet and its prices per foot. `cleaned` turns all
+    /// of these into millimetres and metres, so they are never written out.
+    #[serde(default, skip_serializing)]
+    pub sizes_in: Option<Units>,
+    #[serde(default, skip_serializing)]
+    pub lengths_in: Option<Lengths>,
+    #[serde(default, skip_serializing)]
+    pub step_ft: Option<f64>,
+    /// The prices in the list already include sales tax.
+    #[serde(default)]
+    pub prices_include_tax: bool,
 }
 
 /// Trimmed, and no longer than `max` characters.
@@ -271,6 +390,44 @@ impl MillCatalogue {
         if !dated {
             self.fetched = String::new();
         }
+        // Inches and feet become millimetres and metres.
+        let lengths = self.lengths_in.take().unwrap_or_default();
+        let in_feet = lengths == Lengths::Ft;
+        match self.step_ft.take() {
+            Some(ft) if ft.is_finite() && ft > 0.0 => self.step_m = ft * M_PER_FOOT,
+            _ if in_feet && (self.step_m - default_step()).abs() < 1e-9 => self.step_m = M_PER_FOOT,
+            _ => {}
+        }
+        let scale = if self.sizes_in.take() == Some(Units::In) {
+            MM_PER_INCH
+        } else {
+            1.0
+        };
+        // To a thousandth of a millimetre, so 6 in is 152.4, not 152.39999...
+        let mm = |v: f64| (v * scale * 1000.0).round() / 1000.0;
+        for z in self.timbers.iter_mut().flat_map(|t| t.sizes.iter_mut()) {
+            z.thickness = mm(z.thickness);
+            z.width = mm(z.width);
+            if !(z.price_per_m > 0.0) && z.price_per_ft > 0.0 {
+                z.price_per_m = z.price_per_ft / M_PER_FOOT;
+            }
+            z.price_per_ft = 0.0;
+            // Set lengths in the list's own unit become metres.
+            for l in &mut z.lengths {
+                if l.length > 0.0 {
+                    l.length_m = (lengths.metres(l.length) * 1e6).round() / 1e6;
+                    l.length = 0.0;
+                }
+            }
+            z.lengths.retain(|l| {
+                l.length_m.is_finite()
+                    && l.length_m > 0.0
+                    && l.length_m < 100.0
+                    && l.price.is_finite()
+                    && l.price > 0.0
+            });
+            z.lengths.truncate(40);
+        }
         if !(self.step_m.is_finite() && (0.0..=10.0).contains(&self.step_m)) {
             self.step_m = default_step();
         }
@@ -281,8 +438,11 @@ impl MillCatalogue {
             if !size_ok(t.price_per_bf) {
                 t.price_per_bf = 0.0;
             }
-            t.sizes
-                .retain(|z| size_ok(z.thickness) && size_ok(z.width) && size_ok(z.price_per_m));
+            t.sizes.retain(|z| {
+                size_ok(z.thickness)
+                    && size_ok(z.width)
+                    && (size_ok(z.price_per_m) || z.in_set_lengths())
+            });
             t.sizes.truncate(400);
         }
         self.timbers
@@ -292,6 +452,107 @@ impl MillCatalogue {
             return Err("it has no timbers with prices".into());
         }
         Ok(self)
+    }
+}
+
+/// How a mill sells its sawn sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sells {
+    /// Cut to the length you ask for, at a price per metre or per foot.
+    #[default]
+    Cut,
+    /// Only in set lengths, each with its own price.
+    Set,
+}
+
+fn millimetres() -> Units {
+    Units::Mm
+}
+
+/// One of your timbers' prices at a mill.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MillPrice {
+    /// The timber's id on your timber list.
+    pub timber: String,
+    #[serde(default)]
+    pub price_per_bf: f64,
+    #[serde(default)]
+    pub sawn: Vec<SawnSize>,
+}
+
+/// A mill you buy from: how it sells, and its prices for your timbers.
+/// Sizes are kept in millimetres, lengths in metres and prices per metre,
+/// whatever the mill uses; `sizes_in` and `lengths_in` say how to show them.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Mill {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub fetched: String,
+    #[serde(default = "millimetres")]
+    pub sizes_in: Units,
+    #[serde(default)]
+    pub sells: Sells,
+    #[serde(default)]
+    pub lengths_in: Lengths,
+    /// For sizes cut to length: the step it sells length in, in metres.
+    #[serde(default = "default_step")]
+    pub step_m: f64,
+    /// For a mill that sells in set lengths: the lengths it stocks, in
+    /// metres, which the price editor offers a column for.
+    #[serde(default)]
+    pub set_lengths_m: Vec<f64>,
+    /// Its prices already include sales tax (VAT, GST...), so none is added
+    /// to an order from it. The page sends a tax rate of zero for such a
+    /// mill and shows how much of the total is tax.
+    #[serde(default)]
+    pub prices_include_tax: bool,
+    /// Your timbers' prices here.
+    #[serde(default)]
+    pub prices: Vec<MillPrice>,
+    /// The mill's whole price list as imported, including timbers that are
+    /// not on your list, so they can be added or matched later.
+    #[serde(default)]
+    pub list: Vec<MillTimber>,
+}
+
+impl Mill {
+    /// Tidies a mill that came from the page.
+    pub fn cleaned(mut self) -> Mill {
+        self.id = self
+            .id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .take(40)
+            .collect();
+        self.name = short(&self.name, 60);
+        if self.name.is_empty() {
+            self.name = "My mill".into();
+        }
+        self.source = short(&self.source, 300);
+        if !(self.step_m.is_finite() && (0.0..=10.0).contains(&self.step_m)) {
+            self.step_m = default_step();
+        }
+        self.set_lengths_m
+            .retain(|l| l.is_finite() && *l > 0.0 && *l < 100.0);
+        self.set_lengths_m.sort_by(f64::total_cmp);
+        self.set_lengths_m.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        self.set_lengths_m.truncate(12);
+        self.prices.retain(|p| !p.timber.is_empty());
+        for p in &mut self.prices {
+            if !(p.price_per_bf.is_finite() && p.price_per_bf >= 0.0) {
+                p.price_per_bf = 0.0;
+            }
+            p.sawn.retain(|z| {
+                z.thickness.is_finite() && z.thickness > 0.0 && z.width.is_finite() && z.width > 0.0
+            });
+            p.sawn.truncate(400);
+        }
+        self.list.truncate(200);
+        self
     }
 }
 
@@ -426,6 +687,9 @@ pub struct OrderLine {
 pub struct SawnPiece {
     pub qty: usize,
     pub length_m: f64,
+    /// Price of one board, for a size sold in set lengths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
 }
 
 /// What one length of a sawn board is ripped into.
@@ -459,6 +723,9 @@ pub struct SawnLine {
     pub cost: f64,
     pub pieces: Vec<SawnPiece>,
     pub layouts: Vec<SawnLayout>,
+    /// Bought as boards of set lengths, each with its own price, rather
+    /// than cut to length at a price per metre.
+    pub set_lengths: bool,
 }
 
 /// Strips that no sawn size of their timber is big enough for.

@@ -134,19 +134,20 @@ fn pick_stock(
 fn pick_sawn(
     t: f64,
     w: f64,
+    len: f64,
     sizes: &[&SawnSize],
     rough_t: f64,
     rough_w: f64,
 ) -> Option<(f64, bool, f64)> {
     let mut best: Option<(f64, bool, f64, f64)> = None;
-    for z in sizes {
+    for z in sizes.iter().filter(|z| z.long_enough(len)) {
         for (thick, rip, on_edge) in [(t, w, false), (w, t, true)] {
             let need = rip + rough_w;
             if thick + rough_t > z.thickness + 0.01 || need > z.width + 0.01 {
                 continue;
             }
             // This strip's share of the board's price per metre.
-            let share = need * z.price_per_m / z.width;
+            let share = need * z.rate() / z.width;
             let better = best.map_or(true, |b| {
                 share < b.3 - 1e-9 || ((share - b.3).abs() <= 1e-9 && z.thickness < b.0)
             });
@@ -165,13 +166,14 @@ fn pick_sawn(
 fn pick_whole(
     t: f64,
     w: f64,
+    len: f64,
     sizes: &[&SawnSize],
     rough_t: f64,
     rough_w: f64,
     max_waste: f64,
 ) -> Option<(f64, bool, f64, f64)> {
     let mut best: Option<(f64, bool, f64, f64, f64, f64)> = None;
-    for z in sizes {
+    for z in sizes.iter().filter(|z| z.long_enough(len)) {
         for (thick, rip, on_edge) in [(t, w, false), (w, t, true)] {
             let (deep, need) = (thick + rough_t, rip + rough_w);
             if deep > z.thickness + 0.01 || need > z.width + 0.01 {
@@ -181,11 +183,12 @@ fn pick_whole(
             if waste > max_waste + 1e-9 {
                 continue;
             }
+            let rate = z.rate();
             let better = best.map_or(true, |b| {
-                z.price_per_m < b.4 - 1e-9 || ((z.price_per_m - b.4).abs() <= 1e-9 && waste < b.5)
+                rate < b.4 - 1e-9 || ((rate - b.4).abs() <= 1e-9 && waste < b.5)
             });
             if better {
-                best = Some((z.thickness, on_edge, need, z.width, z.price_per_m, waste));
+                best = Some((z.thickness, on_edge, need, z.width, rate, waste));
             }
         }
     }
@@ -310,9 +313,19 @@ fn section_order(
     waste: f64,
     step: f64,
 ) -> (f64, f64, Vec<SawnPiece>) {
+    let unit = if step > 0.0 { step * 1000.0 } else { 100.0 };
+    // Boards are bought in whole steps, so the longest that can be asked
+    // for is the longest whole number of steps within the limit (3 m is
+    // 9 ft, not 9.84), unless a strip is longer than that on its own.
+    let longest_strip = layers.iter().map(|l| l.length_mm).fold(0.0, f64::max);
+    let stepped = (cap / unit + 1e-9).floor() * unit;
+    let cap = if step > 0.0 && stepped + 0.01 >= longest_strip {
+        stepped
+    } else {
+        cap
+    };
     let boards = boards_from_layers(layers, cap, kerf);
     let metres_net = boards.iter().sum::<f64>() / 1000.0;
-    let unit = if step > 0.0 { step * 1000.0 } else { 100.0 };
     // Each board, rounded up to a length the mill sells.
     let mut asks: Vec<f64> = boards
         .iter()
@@ -359,18 +372,136 @@ fn section_order(
 
     let mut pieces: Vec<SawnPiece> = Vec::new();
     for ask in asks {
-        let ask = (ask * 1000.0).round() / 1000.0;
+        // To a thousandth of a millimetre: a foot is 304.8 mm.
+        let ask = (ask * 1e6).round() / 1e6;
         match pieces.iter_mut().find(|q| (q.length_m - ask).abs() < 1e-6) {
             Some(q) => q.qty += 1,
             None => pieces.push(SawnPiece {
                 qty: 1,
                 length_m: ask,
+                price: None,
             }),
         }
     }
     pieces.sort_by(|a, b| b.length_m.total_cmp(&a.length_m));
     let metres: f64 = pieces.iter().map(|q| q.qty as f64 * q.length_m).sum();
     (metres_net, metres, pieces)
+}
+
+/// What to buy of one sawn section for some layers of strips.
+struct Bought {
+    metres_net: f64,
+    metres: f64,
+    pieces: Vec<SawnPiece>,
+    cost: f64,
+}
+
+/// Buy a section cut to length at its price per metre, or in the set
+/// lengths it is stocked in.
+fn buy_section(
+    z: &SawnSize,
+    layers: &[Layer],
+    cap: f64,
+    kerf: f64,
+    waste: f64,
+    step: f64,
+) -> Bought {
+    if z.in_set_lengths() {
+        return buy_set_lengths(z, layers, cap, kerf, waste);
+    }
+    let (metres_net, metres, pieces) = section_order(layers, cap, kerf, waste, step);
+    Bought {
+        metres_net,
+        metres,
+        pieces,
+        cost: metres * z.price_per_m,
+    }
+}
+
+/// Buy boards of the lengths a section is stocked in. The strips are
+/// joined end to end into boards as long as each stocked length in turn,
+/// each board is bought as the cheapest stocked length it fits, and boards
+/// are added until there is the extra for defects. The cheapest way wins.
+fn buy_set_lengths(z: &SawnSize, layers: &[Layer], cap: f64, kerf: f64, waste: f64) -> Bought {
+    let all: Vec<(f64, f64)> = z
+        .stocked()
+        .iter()
+        .map(|l| (l.length_m * 1000.0, l.price))
+        .collect();
+    // Longer boards than you can carry are no use, unless nothing shorter
+    // is stocked.
+    let carried: Vec<(f64, f64)> = all
+        .iter()
+        .copied()
+        .filter(|(l, _)| *l <= cap + 0.01)
+        .collect();
+    let stock = if carried.is_empty() { all } else { carried };
+    let longest_strip = layers.iter().map(|l| l.length_mm).fold(0.0, f64::max);
+    let shortest_strip = layers
+        .iter()
+        .map(|l| l.length_mm)
+        .fold(f64::INFINITY, f64::min);
+    // The cheapest stocked board at least this long, or the longest there is.
+    let fit = |need: f64| -> (f64, f64) {
+        stock
+            .iter()
+            .copied()
+            .filter(|(l, _)| *l + 0.01 >= need)
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)))
+            .unwrap_or(*stock.last().expect("a size in set lengths has one"))
+    };
+
+    let mut best: Option<(f64, f64, Vec<(f64, f64)>)> = None;
+    for &(join_up_to, _) in &stock {
+        if join_up_to + 0.01 < longest_strip && join_up_to < stock[stock.len() - 1].0 {
+            continue;
+        }
+        let boards = boards_from_layers(layers, join_up_to.max(longest_strip), kerf);
+        let net: f64 = boards.iter().sum();
+        let mut bought: Vec<(f64, f64)> = boards.iter().map(|&b| fit(b)).collect();
+        let spare_needed = net * (waste - 1.0);
+        for _ in 0..500 {
+            let spare = bought.iter().map(|b| b.0).sum::<f64>() - net;
+            if spare + 0.01 >= spare_needed {
+                break;
+            }
+            bought.push(fit(
+                (spare_needed - spare).max(shortest_strip.min(longest_strip))
+            ));
+        }
+        let cost: f64 = bought.iter().map(|b| b.1).sum();
+        let better = best.as_ref().map_or(true, |(c, _, old)| {
+            cost < c - 0.005 || ((cost - c).abs() <= 0.005 && bought.len() < old.len())
+        });
+        if better {
+            best = Some((cost, net, bought));
+        }
+    }
+    let (cost, net, bought) = best.unwrap_or_default();
+
+    let mut pieces: Vec<SawnPiece> = Vec::new();
+    for (len, price) in bought {
+        let length_m = (len * 1000.0).round() / 1e6;
+        match pieces.iter_mut().find(|q| {
+            (q.length_m - length_m).abs() < 1e-6
+                && q.price.is_some_and(|p| (p - price).abs() < 1e-9)
+        }) {
+            Some(q) => q.qty += 1,
+            None => pieces.push(SawnPiece {
+                qty: 1,
+                length_m,
+                price: Some(price),
+            }),
+        }
+    }
+    pieces.sort_by(|a, b| b.length_m.total_cmp(&a.length_m));
+    let metres = pieces.iter().map(|q| q.qty as f64 * q.length_m).sum();
+    Bought {
+        metres_net: net / 1000.0,
+        metres,
+        pieces,
+        cost,
+    }
 }
 
 /// Sawn boards assumed to be available up to this length when you have not
@@ -426,7 +557,7 @@ fn sawn_order(
         let mut sizes: Vec<&SawnSize> = species
             .sawn
             .iter()
-            .filter(|z| key(z.thickness) == key(thickness) && z.width > 0.0 && z.price_per_m > 0.0)
+            .filter(|z| key(z.thickness) == key(thickness) && z.width > 0.0 && z.priced())
             .collect();
         sizes.sort_by(|a, b| a.width.total_cmp(&b.width));
         items.sort_by(|a, b| b.need.total_cmp(&a.need));
@@ -468,9 +599,7 @@ fn sawn_order(
         // rounded up to what the mill sells.
         let price = |plan: &Plan| -> f64 {
             plan.iter()
-                .map(|(z, layers)| {
-                    section_order(layers, cap, kerf, waste, s.sawn_step).1 * z.price_per_m
-                })
+                .map(|(z, layers)| buy_section(z, layers, cap, kerf, waste, s.sawn_step).cost)
                 .sum()
         };
         let mut best: Option<(f64, Plan)> = None;
@@ -506,8 +635,12 @@ fn sawn_order(
         }
 
         for (z, layers) in best.map(|b| b.1).unwrap_or_default() {
-            let (metres_net, metres, pieces) =
-                section_order(&layers, cap, kerf, waste, s.sawn_step);
+            let Bought {
+                metres_net,
+                metres,
+                pieces,
+                cost,
+            } = buy_section(z, &layers, cap, kerf, waste, s.sawn_step);
 
             let mut layouts: Vec<SawnLayout> = Vec::new();
             for layer in &layers {
@@ -539,10 +672,15 @@ fn sawn_order(
                 strips: layers.iter().map(|l| l.rips.len()).sum(),
                 metres_net,
                 metres,
-                price_per_m: z.price_per_m,
-                cost: metres * z.price_per_m,
+                price_per_m: if z.in_set_lengths() {
+                    0.0
+                } else {
+                    z.price_per_m
+                },
+                cost,
                 pieces,
                 layouts,
+                set_lengths: z.in_set_lengths(),
             });
         }
     }
@@ -746,7 +884,7 @@ fn build_plan(
             (OrderBy::Sawn, Some(i)) => lib[i]
                 .sawn
                 .iter()
-                .filter(|z| z.thickness > 0.0 && z.width > 0.0 && z.price_per_m > 0.0)
+                .filter(|z| z.thickness > 0.0 && z.width > 0.0 && z.priced())
                 .collect(),
             _ => Vec::new(),
         }
@@ -761,10 +899,13 @@ fn build_plan(
                     let (t, w) = strip_dims(g.size, i);
                     let (sizes, rough_t, rough_w) =
                         (sawn_sizes(id), mm(s.rough_thickness), mm(s.rough_width));
+                    // Rough strip length, for sizes sold only in set lengths.
+                    let len = mm(panel_length(g.members.len()).0 + s.rough_length);
                     let alone = if s.sawn_whole {
                         pick_whole(
                             mm(t),
                             mm(w),
+                            len,
                             &sizes,
                             rough_t,
                             rough_w,
@@ -777,7 +918,7 @@ fn build_plan(
                         Some((thick, on_edge, need, board)) => {
                             Some((thick, on_edge, need, Some(board)))
                         }
-                        None => pick_sawn(mm(t), mm(w), &sizes, rough_t, rough_w)
+                        None => pick_sawn(mm(t), mm(w), len, &sizes, rough_t, rough_w)
                             .map(|(thick, on_edge, need)| (thick, on_edge, need, None)),
                     }
                 })
@@ -2023,6 +2164,134 @@ mod tests {
     }
 
     #[test]
+    fn a_price_list_in_inches_and_feet_is_kept_in_millimetres_and_metres() {
+        let m: MillCatalogue = serde_json::from_str::<MillCatalogue>(
+            r#"{ "sizes_in": "in", "lengths_in": "ft", "timbers": [
+                { "name": "Walnut", "sizes": [
+                    { "thickness": 1, "width": 6, "price_per_ft": 6 },
+                    { "thickness": 2, "width": 8, "price_per_m": 50 } ] } ] }"#,
+        )
+        .unwrap()
+        .cleaned()
+        .unwrap();
+        let z = &m.timbers[0].sizes;
+        assert!(close(z[0].thickness, 25.4) && close(z[0].width, 152.4));
+        assert!(close(z[0].price_per_m * M_PER_FOOT, 6.0));
+        assert!(close(z[1].thickness, 50.8) && close(z[1].price_per_m, 50.0));
+        // Sold by the foot with no step given: whole feet.
+        assert!(close(m.step_m, M_PER_FOOT));
+        // Written out, it is plain millimetres and metres, so reading it
+        // back does not convert it a second time.
+        let again: MillCatalogue =
+            serde_json::from_str::<MillCatalogue>(&serde_json::to_string(&m).unwrap())
+                .unwrap()
+                .cleaned()
+                .unwrap();
+        assert!(close(again.timbers[0].sizes[0].width, 152.4));
+        assert!(close(again.step_m, M_PER_FOOT));
+        let stepped = serde_json::from_str::<MillCatalogue>(
+            r#"{ "step_ft": 2, "timbers": [{ "name": "Oak", "price_per_bf": 9 }] }"#,
+        )
+        .unwrap()
+        .cleaned()
+        .unwrap();
+        assert!(close(stepped.step_m, 2.0 * M_PER_FOOT));
+    }
+
+    #[test]
+    fn a_mill_that_sells_by_the_foot_is_asked_for_whole_feet() {
+        // Walnut sold as 1 x 6 in and 2 x 6 in at so much a foot.
+        let mut lib = library();
+        let walnut = lib.iter_mut().find(|t| t.id == "walnut").unwrap();
+        walnut.sawn = serde_json::from_str::<MillCatalogue>(
+            r#"{ "sizes_in": "in", "timbers": [{ "name": "Walnut", "sizes": [
+                { "thickness": 1, "width": 6, "price_per_ft": 4 },
+                { "thickness": 2, "width": 6, "price_per_ft": 8 } ] }] }"#,
+        )
+        .unwrap()
+        .cleaned()
+        .unwrap()
+        .timbers[0]
+            .sizes
+            .clone();
+        let mut p = sawn_board();
+        p.settings.sawn_step = M_PER_FOOT;
+        let plan = calculate(&p, &lib).plan.expect("plan");
+        assert!(!plan.sawn.is_empty());
+        for line in &plan.sawn {
+            let feet = line.metres / M_PER_FOOT;
+            assert!(
+                (feet - feet.round()).abs() < 1e-6,
+                "{feet} ft is not whole feet"
+            );
+            for piece in &line.pieces {
+                let ft = piece.length_m / M_PER_FOOT;
+                assert!((ft - ft.round()).abs() < 1e-6, "a piece of {ft} ft");
+            }
+            assert!(close(line.cost, line.metres * line.price_per_m));
+        }
+    }
+
+    /// Walnut sold only as 1 x 6 in and 2 x 6 in boards of set lengths.
+    fn set_length_walnut() -> Vec<Species> {
+        let mut lib = library();
+        let walnut = lib.iter_mut().find(|t| t.id == "walnut").unwrap();
+        walnut.sawn = serde_json::from_str::<MillCatalogue>(
+            r#"{ "sizes_in": "in", "lengths_in": "in", "timbers": [{ "name": "Walnut", "sizes": [
+                { "thickness": 1, "width": 6, "lengths": [
+                    { "length": 36, "price": 24 }, { "length": 48, "price": 30 }, { "length": 96, "price": 55 } ] },
+                { "thickness": 2, "width": 6, "lengths": [
+                    { "length": 36, "price": 50 }, { "length": 48, "price": 62 } ] } ] }] }"#,
+        )
+        .unwrap()
+        .cleaned()
+        .unwrap()
+        .timbers[0]
+            .sizes
+            .clone();
+        lib
+    }
+
+    #[test]
+    fn a_price_list_in_set_lengths_is_read_in_its_own_units() {
+        let lib = set_length_walnut();
+        let z = &lib.iter().find(|t| t.id == "walnut").unwrap().sawn[0];
+        assert!(close(z.width, 152.4) && z.in_set_lengths() && z.priced());
+        let stocked = z.stocked();
+        assert!(close(stocked[0].length_m, 0.9144) && close(stocked[2].length_m, 2.4384));
+        // The cheapest per metre of its lengths: 55 for 96 in.
+        assert!(close(z.rate(), 55.0 / 2.4384));
+        assert!(z.long_enough(2400.0) && !z.long_enough(2500.0));
+    }
+
+    #[test]
+    fn sizes_in_set_lengths_are_bought_as_whole_stocked_boards() {
+        let lib = set_length_walnut();
+        let p = sawn_board();
+        let plan = calculate(&p, &lib).plan.expect("plan");
+        assert!(!plan.sawn.is_empty());
+        let stocked = [0.9144, 1.2192, 2.4384];
+        for line in &plan.sawn {
+            assert!(line.set_lengths);
+            let mut cost = 0.0;
+            for piece in &line.pieces {
+                assert!(
+                    stocked.iter().any(|l| close(*l, piece.length_m)),
+                    "{} m is not a stocked length",
+                    piece.length_m
+                );
+                cost += piece.qty as f64 * piece.price.expect("a price per board");
+            }
+            assert!(close(line.cost, cost));
+            // Enough spare for the extra for defects.
+            assert!(
+                line.metres + 1e-9
+                    >= line.metres_net * (1.0 + p.settings.waste_pct / 100.0) - 0.00001
+            );
+        }
+    }
+
+    #[test]
     fn short_panels_are_named_in_one_warning() {
         assert_eq!(short_panels_warning(&[]), None);
         assert_eq!(
@@ -2132,6 +2401,15 @@ mod tests {
         .unwrap();
         assert_eq!(m.mill, "Your mill");
         assert!(m.fetched.is_empty() && close(m.step_m, 0.3));
+        assert!(
+            !m.prices_include_tax,
+            "prices are before tax unless the list says"
+        );
+        let with_tax = read(
+            r#"{ "prices_include_tax": true, "timbers": [{ "name": "Oak", "price_per_bf": 9 }] }"#,
+        )
+        .unwrap();
+        assert!(with_tax.prices_include_tax);
         assert_eq!(m.timbers.len(), 2);
         assert_eq!(m.timbers[0].name, "Ash");
         assert!(m.timbers[0].color.is_none() && m.timbers[0].sizes.len() == 1);

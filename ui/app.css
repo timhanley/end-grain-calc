@@ -252,6 +252,32 @@ main {
 .sawn-grid span { display: block; font: 13px var(--num); color: var(--ink-2); }
 .sawn-grid input { width: 100%; min-width: 0; height: 26px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: 15px var(--num); text-align: right; background: var(--paper); }
 .sawn-grid input::placeholder { color: var(--line); }
+.sawn-t input { width: 58px; }
+/* Set lengths: a price for each width (rows) and length (columns). */
+.sawn-set { width: 100%; margin-top: 4px; border-collapse: collapse; table-layout: fixed; }
+.sawn-set th { font: 12.5px var(--num); color: var(--ink-2); text-align: right; padding: 0 4px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sawn-set tbody th { text-align: left; width: 34px; }
+.sawn-set td { padding: 0 3px 3px 0; }
+.sawn-set input { width: 100%; min-width: 0; height: 24px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font: 14px var(--num); text-align: right; background: var(--paper); }
+.sawn-set input::placeholder { color: var(--line); }
+/* Which mill a timber's prices are for. */
+.t-at { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.t-at b { color: var(--ink); }
+/* The mill a board is ordered from. */
+.mill-pick { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+.mill-pick select { height: 30px; max-width: 100%; border: 1px solid var(--line); border-radius: 4px; padding: 0 8px; font: 600 14px var(--ui); color: var(--ink); background: var(--paper); }
+.mill-absent { margin: 0 0 12px; }
+.mill-absent li + li { margin-top: 4px; }
+/* A mill in Settings. */
+.mill-card { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.mill-card .mill-name { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--line); border-radius: 4px; padding: 0 8px; font: 700 16px var(--num); color: var(--ink); }
+.mill-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; align-items: center; margin: 10px 0 6px; font-size: 13px; }
+.mill-grid > span { font-weight: 600; }
+.mill-grid .seg { flex-wrap: wrap; justify-self: start; }
+.mill-grid small { display: block; margin-top: 4px; color: var(--ink-2); font-size: 12px; }
+.mill-lengths { flex: 1; min-width: 0; height: 28px; border: 1px solid var(--line); border-radius: 4px; padding: 0 8px; font: 14px var(--num); }
+.mill-sum { display: block; color: var(--ink-2); font-size: 12.5px; }
+@media (max-width: 560px) { .mill-grid { grid-template-columns: minmax(0, 1fr); } }
 .sawn-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sawn-fill { height: 28px; min-width: 0; max-width: 100%; flex: 1 1 180px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); font-size: 13px; color: var(--ink); }
 

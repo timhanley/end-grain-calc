@@ -1,6 +1,6 @@
 [package]
 name = "endgrain"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "End grain chopping board calculator: visual layout, timber order list and milled cutting list"
 authors = ["TEA JAY HAN"]

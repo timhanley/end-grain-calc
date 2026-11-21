@@ -26,10 +26,17 @@ const ALLOWANCES = [
 ];
 
 // Settings that are not sizes in the board's units.
-const PLAIN_SETTINGS = ['waste_pct', 'sawn_step', 'vat_pct', 'sawn_whole', 'sawn_whole_waste', 'sawn_big_as_bf'];
+const PLAIN_SETTINGS = ['waste_pct', 'sawn_step', 'vat_pct', 'sawn_whole', 'sawn_whole_waste', 'sawn_big_as_bf', 'mill'];
 const STOCKS = [4, 5, 6, 8, 10, 12, 16];
-// Widths a mill's sawn boards usually come in, in millimetres.
-const SAWN_WIDTHS = [50, 75, 100, 125, 150, 175, 200, 225];
+// Widths and thicknesses a mill's sawn boards usually come in, kept in
+// millimetres: metric mills, and mills that work in inches (4/4, 5/4 and so on).
+const SAWN_WIDTHS_MM = [50, 75, 100, 125, 150, 175, 200, 225];
+// To a thousandth of a millimetre, as price lists are, so 6 in is 152.4 in both.
+const mm3 = (v) => Math.round(v * 1000) / 1000;
+const SAWN_WIDTHS_IN = [2, 3, 4, 5, 6, 7, 8, 10, 12].map((w) => mm3(w * 25.4));
+const SAWN_THICK_MM = [26, 50, 32, 38, 75, 100];
+const SAWN_THICK_IN = [1, 2, 1.25, 1.5, 3, 4].map((t) => mm3(t * 25.4));
+const sawnWidths = () => (millInches() ? SAWN_WIDTHS_IN : SAWN_WIDTHS_MM);
 const MAX_TRACKS = 40;
 const GUT = 66; // room for the row tape, left of the board
 const RUL = 34; // room for the column tape, above the board
@@ -51,9 +58,9 @@ const S = {
   sel: null, // { axis: 'rows' | 'cols', i }
   openTimber: null,
   boards: [],
-  mill: null, // your mill's price list, once one has been imported
+  mills: [], // the mills you buy from, each with its prices for your timbers
   // The currency symbol, and what a new board starts with.
-  prefs: { currency: '$', units: 'mm', order_by: 'sawn', tax_pct: 0, setup_done: true, check_updates: true },
+  prefs: { currency: '$', units: 'mm', order_by: 'sawn', tax_pct: 0, setup_done: true, check_updates: true, sawn_sizes: 'mm', sawn_lengths: 'm' },
   setup: null, // the settings screen while it is open
   info: null,
   pending: null, // what to do once unsaved changes are dealt with
@@ -130,12 +137,91 @@ const bf = (v) => v.toFixed(1);
 /** A price with your currency symbol, safe to put straight into the page. */
 const money = (v) => esc(S.prefs.currency) + v.toFixed(2);
 const stockLabel = (q) => `${q}/4`;
+const metres = (v) => `${Number(v.toFixed(2))} m`;
+
+// ------------------------------------------------------------------ mills
+//
+// Prices belong to mills, not to timbers: each mill has its own prices for
+// your timbers, and each board is ordered from one of them (its
+// settings.mill; a new board takes the last one chosen). Sawn sizes are kept
+// in millimetres, lengths in metres and prices per metre whatever the mill
+// uses, and shown and typed in the mill's own units.
+const MM_PER_IN = 25.4;
+const M_PER_FT = 0.3048;
+const curMill = () =>
+  (S.project && S.mills.find((m) => m.id === S.project.settings.mill)) || S.mills.find((m) => m.id === S.prefs.mill) || S.mills[0] || null;
+const millInches = () => (curMill() || {}).sizes_in === 'in';
+/** Sold in set lengths, each with a price, rather than cut to length. */
+const setLengths = () => (curMill() || {}).sells === 'set';
+const lengthsIn = () => (curMill() || {}).lengths_in || 'm';
+const millFeet = () => lengthsIn() === 'ft';
+/** A sawn thickness or width, given in millimetres, in the mill's units. */
+const sawnDim = (mm, mark = true) => (millInches() ? fmt(mm / MM_PER_IN, { u: 'in', mark }) : fmt(mm, { u: 'mm', mark }));
+/** A sawn section: 26 × 150 mm, or 1" × 6". */
+const sawnSection = (t, w, x = '&times;') => `${sawnDim(t, millInches())} ${x} ${sawnDim(w)}`;
+/** A length, given in metres, in the mill's units: 2.4 m, 8 ft or 48". */
+const sawnLength = (m) => {
+  const u = lengthsIn();
+  if (u === 'in') return `${Number((m / 0.0254).toFixed(1))}"`;
+  if (u === 'ft') return `${Number((m / M_PER_FT).toFixed(1))} ft`;
+  return metres(m);
+};
+/** A set length as typed and shown in its list: 48, 8 or 2.4. */
+const lengthNumber = (m) => Number((lengthsIn() === 'in' ? m / 0.0254 : lengthsIn() === 'ft' ? m / M_PER_FT : m).toFixed(2));
+const lengthMetres = (v) => Math.round((lengthsIn() === 'in' ? v * 0.0254 : lengthsIn() === 'ft' ? v * M_PER_FT : v) * 1e6) / 1e6;
+/** A price per metre, as a price per the mill's unit of length. */
+const perLength = (perM) => (millFeet() ? perM * M_PER_FT : perM);
+const lengthUnit = () => (millFeet() ? 'foot' : 'metre');
+/** The board's mill's prices already include sales tax. */
+const taxIncluded = () => !!(curMill() || {}).prices_include_tax;
+/** The step the mill sells length in, in its own units, as a plain number. */
+const stepShown = (m) => Number((millFeet() ? m / M_PER_FT : m).toFixed(2));
+/** A sawn size has a price: per metre, or for at least one set length. */
+const sizePriced = (z) => z.price_per_m > 0 || (z.lengths || []).some((l) => l.length_m > 0 && l.price > 0);
+
+/** A timber's prices at a mill (the board's, unless given), or null. */
+const priceOf = (id, m = curMill()) => (m && m.prices.find((x) => x.timber === id)) || null;
+/** A mill has some price for this timber. */
+const hasPrices = (id, m = curMill()) => {
+  const e = priceOf(id, m);
+  return !!e && (e.price_per_bf > 0 || e.sawn.some(sizePriced));
+};
+/** A timber's prices at the board's mill, ready to be typed into. Makes a
+    mill if there is none yet. */
+function priceEntry(id) {
+  const m = curMill() || addMill('My mill');
+  let e = priceOf(id, m);
+  if (!e) m.prices.push((e = { timber: id, price_per_bf: 0, sawn: [] }));
+  return e;
+}
+/** Your timbers with the board's mill's prices on them, for the calculation. */
+const pricedLibrary = () =>
+  S.library.map((t) => {
+    const e = priceOf(t.id);
+    return { ...t, price_per_bf: e ? e.price_per_bf : 0, sawn: e ? e.sawn : [] };
+  });
+
+let millIds = 0;
+function addMill(name) {
+  const m = { id: 'm' + Date.now().toString(36) + (millIds++).toString(36), name, source: '', fetched: '', sizes_in: 'mm', sells: 'cut', lengths_in: 'm', step_m: 0.3, set_lengths_m: [], prices_include_tax: false, prices: [], list: [] };
+  S.mills.push(m);
+  if (!S.prefs.mill) S.prefs.mill = m.id;
+  saveMillsSoon();
+  return m;
+}
+let millsTimer = null;
+function saveMillsSoon() {
+  clearTimeout(millsTimer);
+  millsTimer = setTimeout(() => api('PUT', '/api/mills', S.mills).catch((e) => toast(`Couldn't save your mills: ${e.message}`)), 400);
+}
+/** The date a mill's price list was read, for showing. */
+const listDate = (m) => (m && m.fetched ? new Date(m.fetched + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+
 /** Where a strip comes from: a sawn section or rough stock in quarters. */
 const fromLabel = (item) =>
   item.sawn_width
-    ? `${item.sawn} \u00d7 ${item.sawn_width} mm, no rip`
-    : (item.sawn ? `${item.sawn} mm sawn` : stockLabel(item.stock)) + (item.on_edge ? ' on edge' : '');
-const metres = (v) => `${Number(v.toFixed(2))} m`;
+    ? `${sawnSection(item.sawn, item.sawn_width, '\u00d7')}, no rip`
+    : (item.sawn ? `${sawnDim(item.sawn)} sawn` : stockLabel(item.stock)) + (item.on_edge ? ' on edge' : '');
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + 's'}`;
 
 // Allowances that end up in a size you cut or set. In millimetres they are
@@ -187,9 +273,11 @@ function saveLibrarySoon() {
 
 // ---------------------------------------------------------------- projects
 
-/** What every new board takes from Settings and the mill's price list. */
+/** What every new board takes from Settings: the way to order, the tax, and
+    the mill last ordered from. */
 function boardBasics() {
-  return { order_by: S.prefs.order_by, mill: { vat_pct: S.prefs.tax_pct, ...(S.mill ? { sawn_step: S.mill.step_m } : {}) } };
+  const m = S.mills.find((x) => x.id === S.prefs.mill) || S.mills[0];
+  return { order_by: S.prefs.order_by, mill: { vat_pct: S.prefs.tax_pct, mill: m ? m.id : '' } };
 }
 
 function sampleProject() {
@@ -280,6 +368,13 @@ function change(fn, { undo = true } = {}) {
 
 function afterChange() {
   syncInputs();
+  // The timber editor shows the board's mill's prices: after switching
+  // mills (or undoing a switch) it shows the other mill's.
+  const m = curMill();
+  if ((m && m.id) !== S.shownMill) {
+    S.shownMill = m && m.id;
+    if (S.library.length) renderTimber();
+  }
   recalc();
 }
 
@@ -310,7 +405,11 @@ let calcSeq = 0;
 async function recalc() {
   const mine = ++calcSeq;
   try {
-    const result = await api('POST', '/api/calc', { project: S.project, library: S.library });
+    // The board's mill supplies the prices, and the step it sells length in.
+    const m = curMill();
+    // A mill whose prices include tax has none added.
+    const project = m ? { ...S.project, settings: { ...S.project.settings, sawn_step: m.step_m, ...(m.prices_include_tax ? { vat_pct: 0 } : {}) } } : S.project;
+    const result = await api('POST', '/api/calc', { project, library: pricedLibrary() });
     if (mine !== calcSeq) return;
     S.result = result;
     render();
@@ -419,8 +518,8 @@ function buildRail() {
   // Resetting allowances leaves the car and the mill's terms alone.
   $('#allow-reset').addEventListener('click', () =>
     change((p) => {
-      const { max_length, sawn_step, vat_pct, sawn_whole, sawn_whole_waste, sawn_big_as_bf } = p.settings;
-      p.settings = { ...DEFAULTS[p.units], max_length, sawn_step, vat_pct, sawn_whole, sawn_whole_waste, sawn_big_as_bf };
+      const { max_length, sawn_step, vat_pct, sawn_whole, sawn_whole_waste, sawn_big_as_bf, mill } = p.settings;
+      p.settings = { ...DEFAULTS[p.units], max_length, sawn_step, vat_pct, sawn_whole, sawn_whole_waste, sawn_big_as_bf, mill };
     }),
   );
 
@@ -515,11 +614,15 @@ function renderTimber() {
             <label>Colour <input type="color" value="${validHex(t.color)}"></label>
             <button type="button" class="btn small t-del">Remove this timber</button>
           </div>
+          ${(() => {
+            const m = curMill();
+            return `<p class="t-at">${m ? `Prices at <b>${esc(m.name)}</b>, the mill this board is ordered from.` : 'Prices you type here start a mill, which you can rename under Settings.'}</p>`;
+          })()}
           <div class="t-sec t-bf">
             <b>By the board foot</b>
             <small>Used when an order is written by the board foot. "Buy as" is the rough thickness to ask for; Best fit picks the one that uses least timber.</small>
             <div class="t-row">
-              <label>Price <span class="t-price">${esc(S.prefs.currency)}<input type="text" inputmode="decimal" value="${t.price_per_bf > 0 ? t.price_per_bf.toFixed(2) : ''}" placeholder="none" aria-label="${esc(t.name)} price per board foot" autocomplete="off"></span></label>
+              <label>Price <span class="t-price">${esc(S.prefs.currency)}<input type="text" inputmode="decimal" value="${(priceOf(t.id) || {}).price_per_bf > 0 ? priceOf(t.id).price_per_bf.toFixed(2) : ''}" placeholder="none" aria-label="${esc(t.name)} price per board foot" autocomplete="off"></span></label>
               <label>Buy as <select aria-label="Rough thickness to buy ${esc(t.name)} in">${[null, ...STOCKS].map((q) => `<option value="${q || ''}"${(t.stock || null) === q ? ' selected' : ''}>${q ? stockLabel(q) : 'Best fit'}</option>`).join('')}</select></label>
             </div>
           </div>
@@ -530,54 +633,82 @@ function renderTimber() {
     .join('');
 }
 
-/** Sawn thicknesses a timber has prices for, thinnest first. */
-const sawnThicknesses = (t) => [...new Set((t.sawn || []).map((z) => z.thickness))].sort((a, b) => a - b);
-/** The timber in the mill's price list that this one most likely is, going by name. */
+/** Sawn thicknesses in a list of sizes, thinnest first. */
+const sawnThicknesses = (sawn) => [...new Set((sawn || []).map((z) => z.thickness))].sort((a, b) => a - b);
+/** The timber in the board's mill's price list that this one most likely is, going by name. */
 const sawnPreset = (t) => {
   const mine = t.name.trim().toLowerCase();
-  if (!S.mill || !mine) return null;
-  return S.mill.timbers.find((m) => m.sizes.length && (m.name.toLowerCase().includes(mine) || mine.includes(m.name.toLowerCase()))) || null;
+  const m = curMill();
+  if (!m || !mine) return null;
+  return m.list.find((x) => (x.sizes.length || x.price_per_bf > 0) && (x.name.toLowerCase().includes(mine) || mine.includes(x.name.toLowerCase()))) || null;
 };
-const millDate = () => (S.mill && S.mill.fetched ? new Date(S.mill.fetched + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
-/** Replace a timber's sawn sizes with the mill's sizes for one of its timbers. */
+/** Give a timber the board's mill's listed prices for one of its timbers. */
 function fillFromMill(t, name) {
-  const m = S.mill && S.mill.timbers.find((x) => x.name === name);
-  if (!m || !m.sizes.length) return;
-  t.sawn = m.sizes.map((z) => ({ ...z }));
+  const m = curMill();
+  const x = m && m.list.find((y) => y.name === name);
+  if (!x) return;
+  const e = priceEntry(t.id);
+  if (x.sizes.length) e.sawn = x.sizes.map((z) => JSON.parse(JSON.stringify(z)));
+  if (x.price_per_bf > 0) e.price_per_bf = x.price_per_bf;
   renderTimber();
-  saveLibrarySoon();
+  saveMillsSoon();
   recalc();
 }
 
+/** The sawn sizes part of a timber's editor, for the board's mill. A mill
+    that cuts to length has a price per metre or foot for each size; one that
+    sells set lengths has a price for each length it stocks. */
 function sawnEditor(t) {
-  const blocks = sawnThicknesses(t)
+  const m = curMill();
+  const sawn = (priceOf(t.id) || {}).sawn || [];
+  const set = setLengths();
+  const lens = set ? [...new Set([...(m.set_lengths_m || []), ...sawn.flatMap((z) => (z.lengths || []).map((l) => l.length_m))].map((v) => Math.round(v * 1e6) / 1e6))].sort((a, b) => a - b) : [];
+  const blocks = sawnThicknesses(sawn)
     .map((th) => {
       // The usual widths, plus any others the mill lists at this thickness.
-      const widths = [...new Set([...SAWN_WIDTHS, ...t.sawn.filter((x) => x.thickness === th).map((x) => x.width)])].sort((a, b) => a - b);
-      const cells = widths
-        .map((w) => {
-          const z = t.sawn.find((x) => x.thickness === th && x.width === w);
-          return `<label><span>${w}</span><input class="sawn-price" type="text" inputmode="decimal" autocomplete="off" data-t="${th}" data-w="${w}" value="${z && z.price_per_m > 0 ? z.price_per_m.toFixed(2) : ''}" placeholder="none" aria-label="${th} by ${w} mm, price per metre"></label>`;
-        })
-        .join('');
+      const widths = [...new Set([...sawnWidths(), ...sawn.filter((x) => x.thickness === th).map((x) => x.width)].map(mm3))].sort((a, b) => a - b);
+      const size = (w) => sawn.find((x) => x.thickness === th && mm3(x.width) === w);
+      const grid = set
+        ? lens.length
+          ? `<table class="sawn-set"><thead><tr><th></th>${lens.map((l) => `<th>${sawnLength(l)}</th>`).join('')}</tr></thead><tbody>${widths
+              .map((w) => {
+                const z = size(w);
+                const cells = lens
+                  .map((l) => {
+                    const hit = z && (z.lengths || []).find((x) => Math.abs(x.length_m - l) < 1e-6);
+                    return `<td><input class="sawn-each" type="text" inputmode="decimal" autocomplete="off" data-t="${th}" data-w="${w}" data-l="${l}" value="${hit && hit.price > 0 ? hit.price.toFixed(2) : ''}" placeholder="&ndash;" aria-label="${esc(sawnSection(th, w, 'by'))}, ${esc(sawnLength(l))} long, price each"></td>`;
+                  })
+                  .join('');
+                return `<tr><th>${sawnDim(w, millInches())}</th>${cells}</tr>`;
+              })
+              .join('')}</tbody></table>`
+          : `<p class="help">Add the lengths ${esc(m.name)} stocks under Settings, Your mills, and a column for each appears here.</p>`
+        : `<div class="sawn-grid">${widths
+            .map((w) => {
+              const z = size(w);
+              return `<label><span>${sawnDim(w, millInches())}</span><input class="sawn-price" type="text" inputmode="decimal" autocomplete="off" data-t="${th}" data-w="${w}" value="${z && z.price_per_m > 0 ? perLength(z.price_per_m).toFixed(2) : ''}" placeholder="none" aria-label="${esc(sawnSection(th, w, 'by'))}, price per ${lengthUnit()}"></label>`;
+            })
+            .join('')}</div>`;
       return `<div class="sawn-block">
-        <div class="sawn-t"><input class="sawn-thick" type="text" inputmode="decimal" autocomplete="off" data-t="${th}" value="${th}" aria-label="Sawn thickness in millimetres"> mm thick, by width in mm
-          <button type="button" class="sawn-del" data-t="${th}" aria-label="Remove the ${th} mm sizes">&times;</button></div>
-        <div class="sawn-grid">${cells}</div>
+        <div class="sawn-t"><input class="sawn-thick" type="text" inputmode="decimal" autocomplete="off" data-t="${th}" value="${esc(sawnDim(th, false))}" aria-label="Sawn thickness in ${millInches() ? 'inches' : 'millimetres'}"> ${millInches() ? 'in thick' : 'mm thick'}${set ? ', price each by width and length' : `, by width${millInches() ? '' : ' in mm'}`}
+          <button type="button" class="sawn-del" data-t="${th}" aria-label="Remove the ${esc(sawnDim(th))} sizes">&times;</button></div>
+        ${grid}
       </div>`;
     })
     .join('');
   const guess = sawnPreset(t);
-  const listed = S.mill ? S.mill.timbers.filter((m) => m.sizes.length) : [];
+  const listed = m ? m.list.filter((x) => x.sizes.length || x.price_per_bf > 0) : [];
   const fill = listed.length
-    ? `<select class="sawn-fill" aria-label="Fill in from ${esc(S.mill.mill)}'s price list">
-        <option value="">Fill in from ${esc(S.mill.mill)}…</option>
-        ${listed.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}${guess && guess.name === m.name ? ' (likely match)' : ''}</option>`).join('')}
+    ? `<select class="sawn-fill" aria-label="Fill in from ${esc(m.name)}'s price list">
+        <option value="">Fill in from ${esc(m.name)}'s list…</option>
+        ${listed.map((x) => `<option value="${esc(x.name)}">${esc(x.name)}${guess && guess.name === x.name ? ' (likely match)' : ''}</option>`).join('')}
       </select>`
     : '';
+  const tax = m && m.prices_include_tax ? 'including tax' : 'before tax';
+  const how = set ? `What the mill charges for each board, by size and length, ${tax}. Leave a box empty if they don't stock it.` : `What the mill charges per ${lengthUnit()} for each sawn size, ${tax}. Leave a width empty if they don't stock it.`;
   return `<div class="t-sec sawn">
     <b>By sawn size</b>
-    <small>What the mill charges per metre for each sawn size, before tax. Leave a width empty if they don't stock it.${listed.length ? ` ${esc(S.mill.mill)}'s price list ${millDate() ? `was read on ${millDate()}` : 'is loaded'}.` : ''}</small>
+    <small>${how}${listed.length ? ` ${esc(m.name)}'s price list ${listDate(m) ? `was read on ${listDate(m)}` : 'is loaded'}.` : ''}</small>
     ${blocks}
     <div class="sawn-acts">
       ${fill}
@@ -639,15 +770,15 @@ function buildTimber() {
       S.openTimber = S.openTimber === t.id ? null : t.id;
       renderTimber();
     } else if (e.target.closest('.sawn-add, .sawn-del')) {
-      t.sawn = t.sawn || [];
-      if (e.target.closest('.sawn-del')) t.sawn = t.sawn.filter((z) => z.thickness !== +e.target.closest('.sawn-del').dataset.t);
+      const pe = priceEntry(t.id);
+      if (e.target.closest('.sawn-del')) pe.sawn = pe.sawn.filter((z) => z.thickness !== +e.target.closest('.sawn-del').dataset.t);
       else {
-        const have = sawnThicknesses(t);
-        const next = [26, 50, 32, 38, 75, 100].find((th) => !have.includes(th)) || Math.max(...have) + 25;
-        for (const w of SAWN_WIDTHS) t.sawn.push({ thickness: next, width: w, price_per_m: 0 });
+        const have = sawnThicknesses(pe.sawn);
+        const next = (millInches() ? SAWN_THICK_IN : SAWN_THICK_MM).find((th) => !have.some((x) => Math.abs(x - th) < 0.01)) || Math.max(...have) + (millInches() ? 25.4 : 25);
+        for (const w of sawnWidths()) pe.sawn.push({ thickness: next, width: w, price_per_m: 0 });
       }
       renderTimber();
-      saveLibrarySoon();
+      saveMillsSoon();
       recalc();
     } else if (e.target.closest('.t-del')) {
       if (S.project.cells.some((row) => row.includes(t.id))) return toast(`${t.name} is still on this board. Repaint those cells first.`);
@@ -668,35 +799,52 @@ function buildTimber() {
       t.color = el.value;
       $('.swatch', el.closest('.timber')).style.background = el.value;
     } else if (el.classList.contains('sawn-fill')) return; // applied below, on change
-    else if (el.tagName === 'SELECT') t.stock = el.value ? +el.value : null;
-    else if (el.classList.contains('sawn-thick')) return; // applied when you leave the field
-    else if (el.classList.contains('sawn-price')) {
+    else if (el.tagName === 'SELECT') {
+      t.stock = el.value ? +el.value : null;
+      saveLibrarySoon();
+      return recalc();
+    } else if (el.classList.contains('sawn-thick')) return; // applied when you leave the field
+    else if (el.classList.contains('sawn-price') || el.classList.contains('sawn-each')) {
+      // Prices belong to the board's mill. Typed per metre or per foot and
+      // kept per metre, or for set lengths, per board.
       const v = parseFloat(el.value.replace(',', '.'));
-      const z = t.sawn.find((x) => x.thickness === +el.dataset.t && x.width === +el.dataset.w);
-      if (z) z.price_per_m = isFinite(v) && v > 0 ? v : 0;
-      else t.sawn.push({ thickness: +el.dataset.t, width: +el.dataset.w, price_per_m: isFinite(v) && v > 0 ? v : 0 });
+      const ok = isFinite(v) && v > 0;
+      const pe = priceEntry(t.id);
+      let z = pe.sawn.find((x) => x.thickness === +el.dataset.t && mm3(x.width) === +el.dataset.w);
+      if (!z) pe.sawn.push((z = { thickness: +el.dataset.t, width: +el.dataset.w, price_per_m: 0 }));
+      if (el.classList.contains('sawn-price')) z.price_per_m = ok ? (millFeet() ? v / M_PER_FT : v) : 0;
+      else {
+        const l = +el.dataset.l;
+        z.lengths = (z.lengths || []).filter((x) => Math.abs(x.length_m - l) > 1e-6);
+        if (ok) z.lengths.push({ length_m: l, price: v });
+        z.lengths.sort((a, b) => a.length_m - b.length_m);
+      }
     } else if (el.closest('.t-price')) {
       const v = parseFloat(el.value.replace(',', '.'));
-      t.price_per_bf = isFinite(v) && v >= 0 ? v : 0;
+      priceEntry(t.id).price_per_bf = isFinite(v) && v >= 0 ? v : 0;
     } else return;
-    saveLibrarySoon();
+    saveMillsSoon();
     recalc();
   });
   list.addEventListener('change', (e) => {
     const t = at(e);
     if (!t) return;
     const el = e.target;
-    if (el.closest('.t-price')) el.value = t.price_per_bf > 0 ? t.price_per_bf.toFixed(2) : '';
+    if (el.closest('.t-price')) el.value = (priceOf(t.id) || {}).price_per_bf > 0 ? priceOf(t.id).price_per_bf.toFixed(2) : '';
     else if (el.classList.contains('sawn-fill')) {
       if (el.value) fillFromMill(t, el.value);
     } else if (el.classList.contains('sawn-thick')) {
       const from = +el.dataset.t;
-      const to = parseFloat(el.value.replace(',', '.'));
-      if (isFinite(to) && to > 0 && to !== from && !sawnThicknesses(t).includes(to)) {
-        for (const z of t.sawn) if (z.thickness === from) z.thickness = to;
-        saveLibrarySoon();
+      // Typed in inches (1 1/4, 5/4 or 1.25) or millimetres, kept in millimetres.
+      const typed = millInches() ? parseDim(el.value, 'in') : parseFloat(el.value.replace(',', '.'));
+      const to = typed == null || !isFinite(typed) ? NaN : millInches() ? Math.round(typed * MM_PER_IN * 1000) / 1000 : typed;
+      const same = (a, b) => Math.abs(a - b) < 0.01;
+      const pe = priceEntry(t.id);
+      if (isFinite(to) && to > 0 && !same(to, from) && !sawnThicknesses(pe.sawn).some((x) => same(x, to))) {
+        for (const z of pe.sawn) if (z.thickness === from) z.thickness = to;
+        saveMillsSoon();
         recalc();
-      } else if (to !== from) toast(isFinite(to) && to > 0 ? `${t.name} already has ${to} mm sizes.` : 'Thickness needs to be a number of millimetres.');
+      } else if (!same(to, from)) toast(isFinite(to) && to > 0 ? `${t.name} already has ${sawnDim(to)} sizes.` : millInches() ? 'Thickness needs to be in inches, such as 1, 1 1/4 or 5/4.' : 'Thickness needs to be a number of millimetres.');
       renderTimber();
     }
   });
@@ -1348,6 +1496,43 @@ function goToAllowance(key) {
   input.select();
 }
 
+/** The step the board's mill sells length in, in metres. */
+const millStep = () => (curMill() ? curMill().step_m : S.project.settings.sawn_step);
+
+/** Which mill this board is ordered from, and which timbers it has no prices for. */
+function millPicker() {
+  if (!S.mills.length) {
+    return `<p class="help no-print mill-none">No mill yet. Type a timber's prices under its ··· button and they start one, or <button type="button" class="link" data-settings="prices">import a mill's price list</button>.</p>`;
+  }
+  const m = curMill();
+  const pick = `<label class="mill-pick no-print"><span>Mill</span><select id="mill-pick" aria-label="Mill to order from">${S.mills
+    .map((x) => `<option value="${esc(x.id)}"${x === m ? ' selected' : ''}>${esc(x.name)}</option>`)
+    .join('')}<option value="" disabled>──────────</option><option value="__manage">Add or change mills…</option></select></label><p class="print-only">From <b>${esc(m.name)}</b>.</p>`;
+  const onBoard = [...new Set(S.project.cells.flat())].map(timber).filter((t) => t.id);
+  const absent = onBoard.filter((t) => !hasPrices(t.id));
+  if (!absent.length) return pick;
+  const lines = absent
+    .map((t) => {
+      const others = S.mills.filter((x) => x !== m && hasPrices(t.id, x)).slice(0, 2);
+      return `<li><b>${esc(t.name)}</b>: no prices at ${esc(m.name)}. <button type="button" class="link" data-price="${esc(t.id)}">Enter them</button>${others
+        .map((x) => ` <button type="button" class="link" data-mill="${esc(x.id)}">Order from ${esc(x.name)}</button>`)
+        .join(' ')}</li>`;
+    })
+    .join('');
+  return `${pick}<div class="notes open mill-absent no-print" role="note"><ul>${lines}</ul></div>`;
+}
+
+/** Under the sawn order: how the board's mill sells length, and its units. */
+function millTerms(carry) {
+  const m = curMill();
+  if (!m) return '';
+  const longest = carry ? ` No board on this order is longer than ${sawnLength(carry * (units() === 'in' ? 0.0254 : 0.001))}.` : '';
+  const how = setLengths()
+    ? `${esc(m.name)} sells sawn sizes in set lengths${(m.set_lengths_m || []).length ? `: ${m.set_lengths_m.map(sawnLength).join(', ')}` : ''}.`
+    : `${esc(m.name)} sells length in steps of <input id="sawn-step" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${stepShown(m.step_m)}" aria-label="${millFeet() ? 'Feet' : 'Metres'} per step"> ${millFeet() ? 'ft' : 'm'}.`;
+  return `<p class="help mill-terms no-print">${how}${longest} Sizes are in ${millInches() ? 'inches' : 'millimetres'}. <button type="button" class="link" data-settings="mills">Change how ${esc(m.name)} sells</button></p>`;
+}
+
 function renderResults() {
   const el = $('#results');
   const r = S.result;
@@ -1397,47 +1582,64 @@ function renderResults() {
   if (!sawnMode) {
     h = `<div class="totals">
         <div><b>${bf(t.bf_order)}</b>board feet to order</div>
-        <div>${costHead(t.cost, 'at your prices')}</div>
+        <div>${costHead(t.cost, taxIncluded() ? 'including tax' : 'at your prices')}</div>
       </div>
       <p class="sub">That includes ${p.settings.waste_pct}% extra for defects. The finished board itself is ${bf(t.board_bf)} board feet.</p>`;
   } else {
     h = `<div class="order-total${t.unpriced ? ' incomplete' : ''}">
       ${t.unpriced ? `<p class="missing"><b>Not the whole board.</b> ${plural(t.unpriced, 'strip')} could not be fitted to a sawn size, so ${t.unpriced === 1 ? 'it is' : 'they are'} missing from this order and this price. The order list below says why.</p>` : ''}
       <div class="totals">
-        <div><b>${metres(t.sawn_metres)}</b>of sawn board to order${plan.order.length ? `, plus ${bf(t.bf_order)} board feet` : ''}</div>
-        <div>${costHead(t.total, t.vat > 0 ? 'including tax' : 'at the prices entered')}</div>
+        <div><b>${sawnLength(t.sawn_metres)}</b>of sawn board to order${plan.order.length ? `, plus ${bf(t.bf_order)} board feet` : ''}</div>
+        <div>${costHead(t.total, t.vat > 0 || taxIncluded() ? 'including tax' : 'at the prices entered')}</div>
       </div>
-      <p class="sub">Lengths include ${p.settings.waste_pct}% extra for defects${p.settings.sawn_step > 0 ? ` and are rounded up to the next ${p.settings.sawn_step === 1 ? 'whole metre' : metres(p.settings.sawn_step)}` : ''}.</p>
+      <p class="sub">${
+        setLengths()
+          ? `Whole boards of the lengths ${esc(curMill().name)} stocks, with ${p.settings.waste_pct}% extra for defects.`
+          : `Lengths include ${p.settings.waste_pct}% extra for defects${millStep() > 0 ? ` and are rounded up to the next ${stepShown(millStep()) === 1 ? `whole ${lengthUnit()}` : sawnLength(millStep())}` : ''}.`
+      }</p>
     </div>`;
   }
   // On paper the left-hand panel is gone, so the sheet says what it is for.
   const printed = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   h = `<div class="print-bar no-print"><span>Order, cutting list and glue-ups for the workshop</span><button type="button" class="btn small tape" id="print-lists">Print these lists</button></div>
     <p class="print-only sheet-head">Finished board <b>${fmt(r.actual_width)} &times; ${fmt(r.actual_depth)} &times; ${fmt(p.thickness)}</b>, ${plural(p.cols.length, 'column')} by ${plural(p.rows.length, 'row')}. Saw kerf ${fmt(p.settings.kerf)}. Printed ${printed}.</p>` + h;
-  h += notesBox(plan.warnings);
+  // A timber the board's mill has no prices for at all is named by the mill
+  // picker in the order, so the engine's note about its sawn sizes would
+  // only say it twice.
+  const absent = new Set(S.library.filter((x) => !hasPrices(x.id)).map((x) => x.name));
+  h += notesBox(plan.warnings.filter((w) => {
+    const named = /^No sawn sizes are entered for (.+), so it is listed/.exec(w);
+    return !(named && curMill() && absent.has(named[1]));
+  }));
 
   h += `<section><div class="sec-head"><h2>Order from the mill</h2><button type="button" class="btn small no-print" id="copy-order">Copy order</button></div>
+    ${millPicker()}
     ${bySegment}`;
   if (!sawnMode) {
     h += `<p class="help">Rough sawn, by timber and thickness.</p>${bfTable()}
       <tr class="sum"><td colspan="2">Total</td><td class="n">${bf(t.bf_order)}</td><td></td><td class="n">${noPrice.length && !(t.cost > 0) ? '&ndash;' : money(t.cost)}</td></tr></tbody></table>`;
   } else {
-    const missing = [...new Set(plan.order.map((o) => o.species))].map(timber).filter((x) => x.id && !(x.sawn || []).some((z) => z.price_per_m > 0));
-    h += `<p class="help">Sawn boards in the mill's sizes, by the metre. <span class="no-print">Enter a timber's sizes and prices under its ··· button in the timber list. </span>Each length is cut, ripped into strips a little oversize, and the strips are planed to their finished width.</p>
+    // Timbers this mill has a board foot price for but no sawn sizes. Those
+    // with no price here at all are named by the mill picker above.
+    const missing = [...new Set(plan.order.map((o) => o.species))].map(timber).filter((x) => x.id && hasPrices(x.id) && !((priceOf(x.id) || {}).sawn || []).some(sizePriced));
+    h += `<p class="help">Sawn boards in the mill's sizes, ${setLengths() ? 'in the lengths it stocks' : `by the ${lengthUnit()}`}. <span class="no-print">Enter a timber's sizes and prices under its ··· button in the timber list. </span>Each length is cut, ripped into strips a little oversize, and the strips are planed to their finished width.</p>
       <p class="rip-opt no-print"><label><input type="checkbox" id="sawn-whole"${p.settings.sawn_whole ? ' checked' : ''}> Avoid ripping</label>
         <span>Give a strip a board to itself where no more than <input id="sawn-whole-waste" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${p.settings.sawn_whole_waste}" aria-label="Most of a board to plane away, in percent">% of that board would be planed away. Thinner strips are still ripped from wider boards. <b>${ripNote(t, p.settings.sawn_whole)}</b></span></p>`;
     for (const x of missing) {
       const m = sawnPreset(x);
-      h += `<p class="no-print acts">${m ? `<button type="button" class="btn small" data-preset="${esc(x.id)}">Use ${esc(S.mill.mill)}'s ${esc(m.name.toLowerCase())} prices for ${esc(x.name)}</button>` : ''}<button type="button" class="btn small" data-sawn="${esc(x.id)}">Enter sawn sizes for ${esc(x.name)}</button></p>`;
+      h += `<p class="no-print acts">${m ? `<button type="button" class="btn small" data-preset="${esc(x.id)}">Use ${esc(curMill().name)}'s ${esc(m.name.toLowerCase())} prices for ${esc(x.name)}</button>` : ''}<button type="button" class="btn small" data-sawn="${esc(x.id)}">Enter sawn sizes for ${esc(x.name)}</button></p>`;
     }
-    if (missing.length && !S.mill) h += `<p class="help no-print">Or <button type="button" class="link" data-settings="prices">import your mill's whole price list</button> and fill them all in at once.</p>`;
+    if (missing.length && !(curMill() && curMill().list.length)) h += `<p class="help no-print">Or <button type="button" class="link" data-settings="prices">import the mill's whole price list</button> and fill them all in at once.</p>`;
     if (plan.sawn.length) {
-      h += `<table><thead><tr><th>Timber</th><th>Sawn size</th><th class="n">Metres</th><th class="n">Per metre</th><th class="n">Cost</th></tr></thead><tbody>`;
+      const anySet = plan.sawn.some((l) => l.set_lengths);
+      h += `<table><thead><tr><th>Timber</th><th>Sawn size</th><th class="n">${lengthsIn() === 'in' ? 'Length' : millFeet() ? 'Feet' : 'Metres'}</th><th class="n">${anySet ? 'Each' : `Per ${lengthUnit()}`}</th><th class="n">Cost</th></tr></thead><tbody>`;
       for (const l of plan.sawn) {
-        const ask = l.pieces.map((q) => `${q.qty} &times; ${metres(q.length_m)}`).join(', ');
+        // Boards of set lengths carry their own price each.
+        const ask = l.pieces.map((q) => `${q.qty} &times; ${sawnLength(q.length_m)}${q.price != null ? ` at ${money(q.price)}` : ''}`).join(', ');
+        const each = l.set_lengths ? (new Set(l.pieces.map((q) => q.price)).size === 1 ? money(l.pieces[0].price) : '&ndash;') : money(perLength(l.price_per_m));
         // Plain instructions, in the order you do them: what to ask the
         // mill for, then each crosscut and what that piece is ripped into.
-        const spare = l.metres - l.metres_net > 0.005 ? ` <span class="lay-note">(${metres(l.metres_net)} is cut into strips; the other ${metres(l.metres - l.metres_net)} is spare for defects)</span>` : '';
+        const spare = l.metres - l.metres_net > 0.005 ? ` <span class="lay-note">(${sawnLength(l.metres_net)} is cut into strips; the other ${sawnLength(l.metres - l.metres_net)} is spare for defects)</span>` : '';
         const steps = l.layouts
           .map((y, i) => {
             const one = y.qty === 1;
@@ -1453,7 +1655,7 @@ function renderResults() {
           })
           .join('');
         const cuts = `<div class="layouts"><p>Ask the mill for <b>${ask}</b>${spare}</p>${steps}</div>`;
-        h += `<tr class="main"><td>${sw(l.species)}${esc(timber(l.species).name)}</td><td class="d">${l.thickness} &times; ${l.width} mm</td><td class="n">${metres(l.metres)}</td><td class="n">${money(l.price_per_m)}</td><td class="n">${money(l.cost)}</td></tr>
+        h += `<tr class="main"><td>${sw(l.species)}${esc(timber(l.species).name)}</td><td class="d">${sawnSection(l.thickness, l.width)}</td><td class="n">${sawnLength(l.metres)}</td><td class="n">${each}</td><td class="n">${money(l.cost)}</td></tr>
           <tr class="detail"><td colspan="5">${cuts}</td></tr>`;
       }
       h += `</tbody></table>`;
@@ -1469,8 +1671,8 @@ function renderResults() {
         const name = esc(timber(x.species).name);
         const why =
           x.need_thickness > x.max_thickness + 0.01
-            ? `Even on its side, each needs a sawn board <b>${Number(x.need_thickness.toFixed(1))} mm</b> thick once your ${fmt(p.settings.rough_thickness)} rough thickness loss is added. The thickest ${name.toLowerCase()} the mill lists is <b>${x.max_thickness} mm</b>, so the most that fits is <b>${fmt(toUnits(x.max_thickness) - p.settings.rough_thickness)}</b> on the strip's smaller side.`
-            : `Each needs a sawn board ${Number(x.need_thickness.toFixed(1))} mm thick and <b>${Number(x.need_width.toFixed(1))} mm</b> wide once your rough losses are added. The widest ${name.toLowerCase()} that thick is <b>${x.max_width} mm</b>.`;
+            ? `Even on its side, each needs a sawn board <b>${sawnDim(x.need_thickness)}</b> thick once your ${fmt(p.settings.rough_thickness)} rough thickness loss is added. The thickest ${name.toLowerCase()} the mill lists is <b>${sawnDim(x.max_thickness)}</b>, so the most that fits is <b>${fmt(toUnits(x.max_thickness) - p.settings.rough_thickness)}</b> on the strip's smaller side.`
+            : `Each needs a sawn board ${sawnDim(x.need_thickness)} thick and <b>${sawnDim(x.need_width)}</b> wide once your rough losses are added. The widest ${name.toLowerCase()} that thick is <b>${sawnDim(x.max_width)}</b>.`;
         h += `<div class="issue toobig${asBf ? ' note' : ''}"><p>${sw(x.species)}<b>${plural(x.qty, `${name} strip`)}</b> finishing ${fmt(x.thickness)} &times; ${fmt(x.width)}. ${why}</p></div>`;
       }
       h += `<p class="help">To buy them as sawn boards${asBf ? ' instead' : ''}, make the rows or columns behind them smaller, or lower the rough thickness loss under "More allowances" if your boards need less planing.</p>`;
@@ -1479,16 +1681,26 @@ function renderResults() {
       // Two things can land here: timbers with no sawn sizes entered, and
       // strips too big for the mill's sizes when you have asked for those.
       const big = new Set(p.settings.sawn_big_as_bf ? plan.too_big.map((x) => x.species) : []);
-      const unlisted = plan.order.some((o) => !big.has(o.species) || !(timber(o.species).sawn || []).some((z) => z.price_per_m > 0));
+      const unlisted = plan.order.some((o) => !big.has(o.species) || !((priceOf(o.species) || {}).sawn || []).some(sizePriced));
       const what = [unlisted ? 'timbers with no sawn sizes entered' : '', big.size ? "strips too big for the mill's sizes" : ''].filter(Boolean).join(', and ');
       h += `<h3 class="sub-head">By the board foot</h3><p class="help">${what.charAt(0).toUpperCase() + what.slice(1)}.</p>${bfTable()}</tbody></table>`;
     }
-    h += `<table class="sums"><tbody>
-        <tr><td>Before tax</td><td class="n">${money(t.cost)}</td></tr>
-        <tr><td>Tax at <input id="vat-pct" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${p.settings.vat_pct}" aria-label="Tax percent">%</td><td class="n">${money(t.vat)}</td></tr>
+    // A mill whose prices include tax: nothing is added, and the rate only
+    // says how much of the total is tax.
+    const rate = `<input id="vat-pct" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${p.settings.vat_pct}" aria-label="Tax percent">%`;
+    const within = taxIncluded() ? (t.total * p.settings.vat_pct) / (100 + p.settings.vat_pct) : 0;
+    h += taxIncluded()
+      ? `<table class="sums"><tbody>
+        <tr><td>Before tax</td><td class="n">${money(t.total - within)}</td></tr>
+        <tr><td>Tax at ${rate}, included in ${esc(curMill().name)}'s prices</td><td class="n">${money(within)}</td></tr>
         <tr class="sum"><td>Total</td><td class="n">${money(t.total)}</td></tr>
-      </tbody></table>
-      <p class="help mill-terms no-print">The mill sells length in steps of <input id="sawn-step" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${p.settings.sawn_step}" aria-label="Metres per step"> m.${carry ? ` No board on this order is longer than ${metres(carry * (units() === 'in' ? 0.0254 : 0.001))}.` : ''}</p>`;
+      </tbody></table>`
+      : `<table class="sums"><tbody>
+        <tr><td>Before tax</td><td class="n">${money(t.cost)}</td></tr>
+        <tr><td>Tax at ${rate}</td><td class="n">${money(t.vat)}</td></tr>
+        <tr class="sum"><td>Total</td><td class="n">${money(t.total)}</td></tr>
+      </tbody></table>`;
+    h += millTerms(carry);
   }
   h += `</section>`;
 
@@ -1499,7 +1711,7 @@ function renderResults() {
     const how = c.too_big
       ? `No sawn size the mill lists is big enough for this strip, so it is not on the order.`
       : c.sawn_width
-      ? `From a ${c.sawn} &times; ${c.sawn_width} mm board cut ${fmt(c.rough_length)} long. No ripping: plane it to size.`
+      ? `From a ${sawnSection(c.sawn, c.sawn_width)} board cut ${fmt(c.rough_length)} long. No ripping: plane it to size.`
       : `From ${fromLabel(c)}: rip at ${fmt(c.rip_at)} and cut ${fmt(c.rough_length)} long, then plane to size.`;
     h += `<tr class="main"><td class="n">${c.qty}</td><td>${sw(c.species)}${esc(timber(c.species).name)}</td><td class="n">${fmt(c.thickness)}</td><td class="n">${fmt(c.width)}</td><td class="n">${fmt(c.length)}</td><td class="d wrap">${c.panels.join(', ')}</td></tr>
       <tr class="detail"><td></td><td colspan="5">${how}</td></tr>`;
@@ -1656,6 +1868,16 @@ function buildGuide() {
   showGuidePage(first);
 }
 
+/** Order this board from another mill. New boards then start with it too. */
+function chooseMill(id) {
+  if (!S.mills.some((m) => m.id === id) || id === S.project.settings.mill) return;
+  change((p) => (p.settings.mill = id));
+  S.prefs.mill = id;
+  api('PUT', '/api/prefs', S.prefs).catch(() => {});
+  renderTimber();
+  toast(`Ordering from ${curMill().name}.`);
+}
+
 /** The app's File > Print Lists menu item calls this. */
 window.endgrainPrintLists = () => printPage('lists');
 
@@ -1664,12 +1886,12 @@ function orderText() {
   const p = S.project;
   const plan = r.plan;
   const carry = p.settings.max_length > 0 ? p.settings.max_length : 0;
-  const lines = [`Timber order for ${p.name.trim() || 'a chopping board'}`];
+  const lines = [`Timber order for ${p.name.trim() || 'a chopping board'}${curMill() ? `, from ${curMill().name}` : ''}`];
   if (plan.sawn.length) {
     lines.push('Sawn boards:');
     for (const l of plan.sawn) {
-      const ask = l.pieces.map((q) => `${q.qty} x ${metres(q.length_m)}`).join(', ');
-      lines.push(`- ${timber(l.species).name} ${l.thickness} x ${l.width} mm: ${metres(l.metres)}, as ${ask}`);
+      const ask = l.pieces.map((q) => `${q.qty} x ${sawnLength(q.length_m)}${q.price != null ? ` at ${S.prefs.currency}${q.price.toFixed(2)}` : ''}`).join(', ');
+      lines.push(`- ${timber(l.species).name} ${sawnSection(l.thickness, l.width, 'x')}: ${sawnLength(l.metres)}, as ${ask}`);
     }
   }
   if (plan.order.length) {
@@ -1679,7 +1901,7 @@ function orderText() {
     }
     lines.push(`Total: ${bf(plan.totals.bf_order)} bf`);
   }
-  if (carry) lines.push(`No length over ${metres(carry * (units() === 'in' ? 0.0254 : 0.001))} please.`);
+  if (carry) lines.push(`No length over ${sawnLength(carry * (units() === 'in' ? 0.0254 : 0.001))} please.`);
   return lines.join('\n');
 }
 
@@ -1714,7 +1936,10 @@ Read the mill's current prices for sawn or rough sawn boards, then reply with on
   "mill": "The mill's name",
   "source": "The web page the prices came from",
   "fetched": "${today()}",
+  "sizes_in": "mm",
+  "lengths_in": "m",
   "step_m": 0.3,
+  "prices_include_tax": false,
   "timbers": [
     {
       "name": "American black walnut",
@@ -1730,12 +1955,26 @@ Read the mill's current prices for sawn or rough sawn boards, then reply with on
 
 Rules:
 - One entry in "timbers" for each species. "color" is a typical hex colour for that wood; the app uses it to draw the board.
-- If the mill sells fixed sawn sizes by length, list each one under "sizes". "thickness" and "width" are the nominal sawn size in millimetres (25.4 mm to the inch). "price_per_m" is the price of one metre of length (a price per foot times 3.281). Use the price for the smallest quantity. Leave out sizes with no price or that are out of stock.
+- If the mill sells fixed sawn sizes by length, list each one under "sizes", in the mill's own units. "sizes_in" says how the mill gives thickness and width: "mm" for millimetres, or "in" for inches (then 1 1/4" or 5/4 is 1.25, and 1 x 6 is thickness 1, width 6). "thickness" and "width" are the nominal sawn size. Use the price for the smallest quantity. Leave out sizes with no price or that are out of stock.
+- "lengths_in" says how the mill sells length: "m" for by the metre, or "ft" for by the foot. Give each size's price as "price_per_m" (one metre) or "price_per_ft" (one foot) to match.
+- If the mill sells boards already cut to set lengths, each with its own price (such as a 1 x 6 at 36" or 48"), give each size a "lengths" list instead of a price per metre or foot, such as "lengths": [{ "length": 36, "price": 24 }, { "length": 48, "price": 30 }]. "lengths_in" is then the unit of those lengths: "in", "ft" or "m".
 - If the mill sells by the board foot, put that price in "price_per_bf" and make "sizes" an empty list. A price per cubic foot divided by 12, or a price per cubic metre divided by 424, is a price per board foot.
-- "step_m" is the smallest step of length the mill sells, in metres. Use 0.3 if it sells by the foot or does not say.
-- Prices are plain numbers in the mill's own currency, with no currency symbol. If the mill shows prices with and without sales tax or VAT, use the price without.
+- "step_m" is the smallest step of length the mill sells, in metres, for a mill that sells by the metre; use 0.3 if it does not say. For a mill that sells by the foot, give "step_ft" instead (1 if it does not say) and leave out "step_m".
+- Prices are plain numbers in the mill's own currency, with no currency symbol.
+- "prices_include_tax" says whether those prices include sales tax, VAT or GST. If the mill shows prices both with and without tax, use the prices without and set it to false. If it only shows prices that include tax, use those and set it to true. If it does not say, set it to false and tell me after the JSON that you could not tell.
 - "fetched" is today's date, year-month-day.
 - Only use prices you actually read from the mill. Do not estimate or fill gaps. After the JSON, tell me what you left out and anything you were unsure of.`;
+}
+
+/** The units a price list says it uses, read loosely ("inches", "feet"),
+    or what its prices and step suggest. Either can be missing. */
+function listUnits(list) {
+  const word = (v) => String(v || '').trim().toLowerCase().replace(/[.\s]/g, '');
+  const sizes = { mm: 'mm', millimetre: 'mm', millimetres: 'mm', millimeter: 'mm', millimeters: 'mm', in: 'in', inch: 'in', inches: 'in', '"': 'in' }[word(list.sizes_in)] || null;
+  let lengths = { m: 'm', metre: 'm', metres: 'm', meter: 'm', meters: 'm', ft: 'ft', foot: 'ft', feet: 'ft', "'": 'ft', in: 'in', inch: 'in', inches: 'in', '"': 'in' }[word(list.lengths_in)] || null;
+  const perFoot = Array.isArray(list.timbers) && list.timbers.some((t) => t && Array.isArray(t.sizes) && t.sizes.some((z) => z && z.price_per_ft != null));
+  if (!lengths && (perFoot || list.step_ft != null)) lengths = 'ft';
+  return { sizes, lengths };
 }
 
 /** Numbers that arrive as text ("24.50", "£24.50") are read as numbers, so a
@@ -1743,32 +1982,55 @@ Rules:
     is dropped by the app. */
 function tidyList(list) {
   const num = (v) => {
+    // Inches written as fractions: 5/4, 1 1/4, 1-1/4.
+    if (typeof v === 'string' && /\d\s*\/\s*\d/.test(v)) return parseDim(v.replace(/[^0-9/\s.-]/g, '').trim(), 'in') || 0;
     const n = typeof v === 'string' ? parseFloat(v.replace(/[^0-9.]/g, '')) : v;
     return typeof n === 'number' && isFinite(n) ? n : 0;
   };
   const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+  const units = listUnits(list);
   return {
     mill: str(list.mill),
     source: str(list.source),
     fetched: str(list.fetched) || today(),
     step_m: list.step_m == null ? 0.3 : num(list.step_m),
+    ...(list.step_ft != null ? { step_ft: num(list.step_ft) } : {}),
+    ...(units.sizes ? { sizes_in: units.sizes } : {}),
+    ...(units.lengths ? { lengths_in: units.lengths } : {}),
+    // true, "true", "yes", "inc": the prices already include sales tax.
+    prices_include_tax: list.prices_include_tax === true || /^(true|yes|y|inc|included|including)$/i.test(String(list.prices_include_tax || '').trim()),
     timbers: list.timbers
       .filter((t) => t && typeof t === 'object')
       .map((t) => ({
         name: str(t.name),
         ...(typeof t.color === 'string' ? { color: t.color } : {}),
         price_per_bf: num(t.price_per_bf),
-        sizes: (Array.isArray(t.sizes) ? t.sizes : []).filter((z) => z && typeof z === 'object').map((z) => ({ thickness: num(z.thickness), width: num(z.width), price_per_m: num(z.price_per_m) })),
+        sizes: (Array.isArray(t.sizes) ? t.sizes : []).filter((z) => z && typeof z === 'object').map((z) => ({
+            thickness: num(z.thickness),
+            width: num(z.width),
+            price_per_m: num(z.price_per_m),
+            price_per_ft: num(z.price_per_ft),
+            // Boards sold in set lengths: each length, in the list's unit, and its price.
+            lengths: (Array.isArray(z.lengths) ? z.lengths : []).filter((l) => l && typeof l === 'object').map((l) => ({ ...(l.length_m != null ? { length_m: num(l.length_m) } : { length: num(l.length) }), price: num(l.price) })),
+          })),
       })),
   };
 }
 
-/** Each timber in the price list, with the timber of yours it would update
-    (matched by name, exact names first) and whether you already have its prices. */
-function millMatches() {
+/** A timber's prices at a given mill, ready to be filled in. */
+function priceEntryAt(m, id) {
+  let e = priceOf(id, m);
+  if (!e) m.prices.push((e = { timber: id, price_per_bf: 0, sawn: [] }));
+  return e;
+}
+
+/** Each timber in a mill's price list, with the timber of yours it would
+    give prices to (matched by name, exact names first) and whether that
+    timber already has those prices at this mill. */
+function millMatches(m) {
   const norm = (x) => x.trim().toLowerCase();
   const taken = new Set();
-  const rows = S.mill.timbers.map((m) => ({ m, t: null }));
+  const rows = m.list.map((x) => ({ m: x, t: null }));
   const claim = (fits) => {
     for (const row of rows) {
       if (row.t) continue;
@@ -1778,52 +2040,81 @@ function millMatches() {
   };
   claim((a, b) => a === b);
   claim((a, b) => a.includes(b) || b.includes(a));
-  const sizes = (list) => JSON.stringify(list.map((z) => [z.thickness, z.width, z.price_per_m]));
+  const sizes = (list) => JSON.stringify((list || []).map((z) => [z.thickness, z.width, z.price_per_m, z.lengths || []]));
   for (const row of rows) {
-    const { m, t } = row;
-    row.same = !!t && (!m.sizes.length || sizes(m.sizes) === sizes(t.sawn || [])) && (!(m.price_per_bf > 0) || m.price_per_bf === t.price_per_bf);
+    const e = row.t && priceOf(row.t.id, m);
+    row.same = !!e && (!row.m.sizes.length || sizes(row.m.sizes) === sizes(e.sawn)) && (!(row.m.price_per_bf > 0) || row.m.price_per_bf === e.price_per_bf);
   }
   return rows;
+}
+
+/** A length in metres in one of a mill's units, as a plain number. */
+const inUnit = (m, u) => Number((u === 'in' ? m / 0.0254 : u === 'ft' ? m / M_PER_FT : m).toFixed(2));
+const fromUnit = (v, u) => Math.round((u === 'in' ? v * 0.0254 : u === 'ft' ? v * M_PER_FT : v) * 1e6) / 1e6;
+
+/** One mill in Settings: its name, how it sells, and a just-read price list. */
+function millCard(m) {
+  const st = S.setup;
+  const priced = S.library.filter((t) => hasPrices(t.id, m)).length;
+  const sells = m.sells === 'set' ? 'set' : m.lengths_in === 'ft' ? 'cut-ft' : 'cut-m';
+  const seg = (k, opts, v) => `<div class="seg" data-k="${k}">${opts.map(([val, label]) => `<button type="button" data-v="${val}" class="${val === v ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+  const lens = (m.set_lengths_m || []).map((l) => inUnit(l, m.lengths_in)).join(', ');
+  let h = `<div class="mill-card" data-mill="${esc(m.id)}">
+    <div class="set-line"><input class="mill-name" type="text" autocomplete="off" value="${esc(m.name)}" aria-label="Mill name"><button type="button" class="btn small mill-del${st.confirmDel === m.id ? ' danger' : ''}">${st.confirmDel === m.id ? 'Remove it and its prices' : 'Remove'}</button></div>
+    <div class="mill-grid">
+      <span>Sizes in</span>${seg('sizes', [['mm', 'Millimetres'], ['in', 'Inches']], m.sizes_in)}
+      <span>Sells sawn sizes</span>${seg('sells', [['cut-m', 'Cut to length, by the metre'], ['cut-ft', 'Cut to length, by the foot'], ['set', 'In set lengths']], sells)}
+      <span>Its prices</span><div>${seg('tax', [['ex', 'Before tax'], ['inc', 'Include tax']], m.prices_include_tax ? 'inc' : 'ex')}<small>${m.prices_include_tax ? 'No tax is added to orders from this mill. The order shows how much of the total is tax.' : "Tax, at each board's rate, is added to orders from this mill."}</small></div>
+      ${
+        m.sells === 'set'
+          ? `<span>Lengths it stocks</span><div><div class="set-line"><input class="mill-lengths" type="text" autocomplete="off" value="${lens}" aria-label="Lengths it stocks">${seg('lunit', [['in', 'in'], ['ft', 'ft'], ['m', 'm']], m.lengths_in)}</div><small>Separate them with commas, such as 24, 36, 48, 72. Each timber's editor then has a price for each.</small></div>`
+          : ''
+      }
+    </div>
+    <small class="mill-sum">${priced ? plural(priced, 'timber') : 'No timbers'} priced here${m.list.length ? `. Its price list has ${plural(m.list.length, 'timber')}${listDate(m) ? `, read on ${listDate(m)}` : ''}.` : '.'}</small>`;
+  if (st.importing === m.id && m.list.length) {
+    const rows = millMatches(m);
+    if (!st.picks) st.picks = new Set(rows.map((x, i) => (!x.same ? i : -1)).filter((i) => i >= 0 && rows[i].t));
+    const cur = esc(st.draft.currency.trim() || S.prefs.currency);
+    const what = (x) => [x.sizes.length ? plural(x.sizes.length, 'sawn size') : '', x.price_per_bf > 0 ? `${cur}${x.price_per_bf.toFixed(2)} a board foot` : ''].filter(Boolean).join(', ');
+    h += `<div class="set-have">
+        <p>Tick the timbers you use, and their prices are set for them at ${esc(m.name)}.</p>
+        <ul class="set-list">${rows
+          .map(
+            (x, i) =>
+              `<li><label><input type="checkbox" data-i="${i}"${st.picks.has(i) ? ' checked' : ''}><span><b>${esc(x.m.name)}</b><small>${what(x.m)}</small></span></label><em>${
+                x.same ? `already on ${esc(x.t.name)}` : x.t ? `prices for ${esc(x.t.name)}` : 'adds a new timber'
+              }</em></li>`,
+          )
+          .join('')}</ul>
+        <div class="set-line"><button type="button" class="btn small tape mill-apply">Use these prices</button><button type="button" class="btn small mill-all">Tick all</button></div>
+      </div>`;
+  } else if (m.list.length) h += `<div class="set-line"><button type="button" class="link mill-relist">Match its price list to your timbers again</button></div>`;
+  return h + '</div>';
 }
 
 function renderSetupPrices() {
   const st = S.setup;
   if (!st) return;
-  const m = S.mill;
-  let h = `<h3>Your mill's prices</h3>
-    <p class="help">The app comes with no prices, because every mill's are different. Type them in under each timber's ··· button as you need them, or bring in a whole price list here.</p>`;
-  if (m) {
-    const rows = millMatches();
-    if (!st.picks) st.picks = new Set(rows.map((x, i) => (x.t && !x.same ? i : -1)).filter((i) => i >= 0));
-    const what = (x) => [x.sizes.length ? plural(x.sizes.length, 'sawn size') : '', x.price_per_bf > 0 ? `${esc(st.draft.currency.trim() || S.prefs.currency)}${x.price_per_bf.toFixed(2)} a board foot` : ''].filter(Boolean).join(', ');
-    h += `<div class="set-have">
-        <p><b>${esc(m.mill)}</b>: ${plural(m.timbers.length, 'timber')}${millDate() ? `, read on ${millDate()}` : ''}. Tick the ones you use and their prices go onto your timber list.</p>
-        <ul class="set-list">${rows
-          .map(
-            (x, i) =>
-              `<li><label><input type="checkbox" data-i="${i}"${st.picks.has(i) ? ' checked' : ''}><span><b>${esc(x.m.name)}</b><small>${what(x.m)}</small></span></label><em>${
-                x.same ? `already on ${esc(x.t.name)}` : x.t ? `updates ${esc(x.t.name)}` : 'adds a new timber'
-              }</em></li>`,
-          )
-          .join('')}</ul>
-        <div class="set-line"><button type="button" id="set-apply" class="btn small tape">Update my timber list</button><button type="button" id="set-all" class="btn small">Tick all</button></div>
-      </div>`;
-  }
+  let h = `<h3>Your mills</h3>
+    <p class="help">Each mill keeps its own prices and sizes for your timbers. A board is ordered from one of them, chosen at the top of its order, so you can switch to compare. Type prices in under each timber's ··· button, or bring in a mill's whole price list below.</p>
+    ${S.mills.map(millCard).join('')}
+    <div class="set-line"><button type="button" id="mill-add" class="btn small">Add a mill</button></div>`;
   const steps = `<ol class="set-steps">
       <li><b>Ask your AI assistant to build the list.</b>
         <p>Copy this prompt into an assistant that can read web pages. It says what to look for and the format this app reads.</p>
-        <div class="set-line"><input id="set-site" type="text" autocomplete="off" spellcheck="false" placeholder="Your mill's website (optional)" aria-label="Your mill's website" value="${esc(st.site)}"><button type="button" id="set-copy" class="btn small">Copy the prompt</button></div></li>
+        <div class="set-line"><input id="set-site" type="text" autocomplete="off" spellcheck="false" placeholder="The mill's website (optional)" aria-label="The mill's website" value="${esc(st.site)}"><button type="button" id="set-copy" class="btn small">Copy the prompt</button></div></li>
       <li><b>Paste what it gives you here, or choose the file.</b>
         <textarea id="set-json" rows="4" spellcheck="false" aria-label="Price list" placeholder='{ "mill": "…", "timbers": [ … ] }'></textarea>
         <div class="set-line"><button type="button" id="set-import" class="btn small tape">Read this price list</button><button type="button" id="set-file-btn" class="btn small">Choose a file…</button><input id="set-file" type="file" accept=".json,.txt,application/json,text/plain" hidden></div>
         <p id="set-error" class="warn" role="alert" hidden></p></li>
       <li><b>Check a few prices against the mill's own list.</b> Assistants can misread a page.</li>
     </ol>`;
-  h += m ? `<details id="set-more"><summary>Import a different price list</summary><p class="help">It replaces ${esc(m.mill)}'s list. Prices already on your timbers stay until you update them.</p>${steps}</details>` : steps;
+  h += `<details id="set-more"${S.mills.length ? '' : ' open'}><summary>Import a mill's price list</summary><p class="help">A list from a mill you already have updates that mill (matched by its name); any other becomes a new mill.</p>${steps}</details>`;
   $('#set-prices').innerHTML = h;
 }
 
-/** Read a pasted or chosen price list, save it and offer its timbers. */
+/** Read a pasted or chosen price list into a mill, and offer its timbers. */
 async function importMill(text) {
   const say = (msg) => {
     $('#set-error').textContent = msg;
@@ -1843,42 +2134,108 @@ async function importMill(text) {
     return say(`That text isn't a complete list, so it can't be read (${e.message}). Ask the assistant to send the whole list again.`);
   }
   if (!list || !Array.isArray(list.timbers)) return say('That has no "timbers" list, so it isn\'t a price list. The prompt above asks for the right format.');
+  let read;
   try {
-    S.mill = await api('PUT', '/api/mill', tidyList(list));
+    read = await api('POST', '/api/price-list', tidyList(list));
   } catch (e) {
     return say(e.message);
   }
+  // The mill of the same name, or a new one, takes on the list and its units.
+  const norm = (x) => x.trim().toLowerCase();
+  const m = S.mills.find((x) => norm(x.name) === norm(read.mill)) || addMill(read.mill);
+  const units = listUnits(list);
+  const lengths = [...new Set(read.timbers.flatMap((x) => x.sizes.flatMap((z) => (z.lengths || []).map((l) => l.length_m))))].sort((x, y) => x - y);
+  Object.assign(m, { source: read.source, fetched: read.fetched, list: read.timbers, step_m: read.step_m, prices_include_tax: !!read.prices_include_tax });
+  if (units.sizes) m.sizes_in = units.sizes;
+  if (lengths.length) Object.assign(m, { sells: 'set', lengths_in: units.lengths || (m.sizes_in === 'in' ? 'in' : 'm'), set_lengths_m: lengths });
+  else Object.assign(m, { sells: 'cut', lengths_in: units.lengths === 'ft' ? 'ft' : 'm' });
+  saveMillsSoon();
+  S.setup.importing = m.id;
   S.setup.picks = null;
   renderSetupPrices();
-  renderTimber();
-  if (S.result) render();
-  toast(`Read ${S.mill.mill}'s price list: ${plural(S.mill.timbers.length, 'timber')}.`);
+  toast(`Read ${m.name}'s price list: ${plural(m.list.length, 'timber')}. Tick the ones you use.`);
 }
 
-/** Copy the ticked timbers' prices onto the timber list, adding new ones. */
-function applyMill() {
+/** Give the ticked timbers the mill's prices, adding any you don't have. */
+function applyMill(m) {
   let updated = 0;
   let added = 0;
-  millMatches().forEach((x, i) => {
+  millMatches(m).forEach((x, i) => {
     if (!S.setup.picks.has(i)) return;
-    const sawn = x.m.sizes.map((z) => ({ thickness: z.thickness, width: z.width, price_per_m: z.price_per_m }));
-    if (x.t) {
-      // A list with only a board foot price leaves your sawn sizes alone.
-      if (sawn.length) x.t.sawn = sawn;
-      if (x.m.price_per_bf > 0) x.t.price_per_bf = x.m.price_per_bf;
-      updated++;
-    } else {
-      S.library.push({ id: newTimberId(), name: x.m.name, color: x.m.color ? validHex(x.m.color) : woodColour(x.m.name), price_per_bf: x.m.price_per_bf || 0, stock: null, sawn });
+    let t = x.t;
+    if (!t) {
+      t = { id: newTimberId(), name: x.m.name, color: x.m.color ? validHex(x.m.color) : woodColour(x.m.name), price_per_bf: 0, stock: null, sawn: [] };
+      S.library.push(t);
       added++;
-    }
+    } else updated++;
+    const e = priceEntryAt(m, t.id);
+    // A list with only a board foot price leaves the sawn sizes alone.
+    if (x.m.sizes.length) e.sawn = x.m.sizes.map((z) => JSON.parse(JSON.stringify(z)));
+    if (x.m.price_per_bf > 0) e.price_per_bf = x.m.price_per_bf;
   });
   if (!updated && !added) return toast('Tick at least one timber first.');
+  S.setup.importing = null;
   S.setup.picks = null;
   renderTimber();
-  saveLibrarySoon();
+  if (added) saveLibrarySoon();
+  saveMillsSoon();
   recalc();
   renderSetupPrices();
-  toast([updated ? `Updated ${plural(updated, 'timber')}` : '', added ? `${updated ? 'added' : 'Added'} ${plural(added, 'timber')}` : ''].filter(Boolean).join(', ') + '.');
+  toast([updated ? `Prices set for ${plural(updated, 'timber')}` : '', added ? `${updated ? 'added' : 'Added'} ${plural(added, 'timber')}` : ''].filter(Boolean).join(', ') + ` at ${m.name}.`);
+}
+
+/** A button on a mill's card in Settings. */
+function millButton(btn, m) {
+  const st = S.setup;
+  if (!m) return;
+  if (btn.classList.contains('mill-del')) {
+    if (st.confirmDel !== m.id) {
+      st.confirmDel = m.id;
+      return renderSetupPrices();
+    }
+    S.mills = S.mills.filter((x) => x !== m);
+    if (S.prefs.mill === m.id) S.prefs.mill = S.mills[0] ? S.mills[0].id : '';
+    st.confirmDel = null;
+    return millChanged();
+  }
+  st.confirmDel = null;
+  if (btn.classList.contains('mill-apply')) return applyMill(m);
+  if (btn.classList.contains('mill-all')) {
+    st.picks = new Set(m.list.map((_, i) => i));
+    return renderSetupPrices();
+  }
+  if (btn.classList.contains('mill-relist')) {
+    st.importing = m.id;
+    st.picks = null;
+    return renderSetupPrices();
+  }
+  const k = btn.closest('.seg') && btn.closest('.seg').dataset.k;
+  const v = btn.dataset.v;
+  if (k === 'sizes') m.sizes_in = v;
+  else if (k === 'tax') m.prices_include_tax = v === 'inc';
+  else if (k === 'lunit') m.lengths_in = v;
+  else if (k === 'sells') {
+    if (v === 'set') {
+      m.sells = 'set';
+      if (m.lengths_in !== 'in' && m.sizes_in === 'in') m.lengths_in = 'in';
+      if (!(m.set_lengths_m || []).length) m.set_lengths_m = m.lengths_in === 'in' ? [24, 36, 48, 72, 96].map((x) => fromUnit(x, 'in')) : [1.8, 2.4, 3, 3.6];
+    } else {
+      m.sells = 'cut';
+      m.lengths_in = v === 'cut-ft' ? 'ft' : 'm';
+      // The usual step of the other unit moves to this one's.
+      if (v === 'cut-ft' && Math.abs(m.step_m - 0.3) < 1e-9) m.step_m = M_PER_FT;
+      if (v === 'cut-m' && Math.abs(m.step_m - M_PER_FT) < 1e-6) m.step_m = 0.3;
+    }
+  } else return;
+  millChanged();
+}
+
+/** A change to a mill in Settings: save it and show its effect everywhere. */
+function millChanged(again = true) {
+  saveMillsSoon();
+  renderTimber();
+  recalc();
+  if (again) renderSetupPrices();
 }
 
 function syncSetup() {
@@ -1916,9 +2273,9 @@ function openSetup(first, toPrices = false) {
         <span id="set-units-l">Measure in</span>
         <div><div class="seg" id="set-units" role="group" aria-labelledby="set-units-l"><button type="button" data-v="mm">Millimetres</button><button type="button" data-v="in">Inches</button></div></div>
         <span id="set-order-l">My mill sells timber</span>
-        <div><div class="seg" id="set-order" role="group" aria-labelledby="set-order-l"><button type="button" data-v="bf">By the board foot</button><button type="button" data-v="sawn">In sawn sizes, by the metre</button></div><small>Sets how the order list is written. You can switch on any board.</small></div>
+        <div><div class="seg" id="set-order" role="group" aria-labelledby="set-order-l"><button type="button" data-v="bf">By the board foot</button><button type="button" data-v="sawn">In sawn sizes</button></div><small>Sets how the order list is written. You can switch on any board.</small></div>
         <label for="set-tax">Tax on timber</label>
-        <div><input id="set-tax" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${start.tax_pct}"> %<small>VAT, GST or sales tax, added to orders by sawn size. Leave it at 0 if the prices you enter already include tax.</small></div>
+        <div><input id="set-tax" class="mini" type="text" inputmode="decimal" autocomplete="off" value="${start.tax_pct}"> %<small>VAT, GST or sales tax, added to orders by sawn size. A mill whose prices already include it is marked so under Your mills, and has none added.</small></div>
         <span>New versions</span>
         <div><label class="set-check"><input id="set-updates" type="checkbox"${start.check_updates ? ' checked' : ''}> Tell me when a new version is out</label><small>When the app starts it asks GitHub which version is the latest. Nothing about you or your boards is sent.</small></div>
       </div>
@@ -1937,7 +2294,7 @@ async function closeSetup(how) {
   if (!st) return;
   if (how !== 'cancel') {
     try {
-      S.prefs = await api('PUT', '/api/prefs', { ...(how === 'skip' ? st.start : st.draft), setup_done: true });
+      S.prefs = await api('PUT', '/api/prefs', { ...(how === 'skip' ? st.start : st.draft), mill: S.prefs.mill || '', setup_done: true });
     } catch (e) {
       return toast(`Couldn't save your settings: ${e.message}`);
     }
@@ -1972,11 +2329,14 @@ function buildSetup() {
     else if (btn.id === 'set-copy') return toast((await copyText(aiPrompt(st.site))) ? 'Prompt copied. Paste it to your AI assistant.' : "Couldn't reach the clipboard.");
     else if (btn.id === 'set-import') return importMill($('#set-json').value);
     else if (btn.id === 'set-file-btn') return $('#set-file').click();
-    else if (btn.id === 'set-apply') return applyMill();
-    else if (btn.id === 'set-all') {
-      st.picks = new Set(S.mill.timbers.map((_, i) => i));
-      return renderSetupPrices();
-    } else return;
+    else if (btn.id === 'mill-add') {
+      const m = addMill(`Mill ${S.mills.length + 1}`);
+      renderSetupPrices();
+      const name = $(`.mill-card[data-mill="${m.id}"] .mill-name`);
+      name.focus();
+      return name.select();
+    } else if (btn.closest('.mill-card')) return millButton(btn, S.mills.find((x) => x.id === btn.closest('.mill-card').dataset.mill));
+    else return;
     syncSetup();
   });
   dlg.addEventListener('input', (e) => {
@@ -1990,8 +2350,23 @@ function buildSetup() {
       const v = parseFloat(el.value.replace(',', '.'));
       st.draft.tax_pct = isFinite(v) && v >= 0 && v <= 100 ? v : 0;
     } else if (el.type === 'checkbox' && el.dataset.i) st.picks[el.checked ? 'add' : 'delete'](+el.dataset.i);
+    else if (el.classList.contains('mill-name')) {
+      // Renamed as you type; the order's mill list catches up when you stop.
+      const m = S.mills.find((x) => x.id === el.closest('.mill-card').dataset.mill);
+      m.name = el.value;
+      saveMillsSoon();
+      clearTimeout(st.nameTimer);
+      st.nameTimer = setTimeout(() => (renderTimber(), S.result && render()), 500);
+    }
   });
   dlg.addEventListener('change', async (e) => {
+    if (e.target.classList.contains('mill-lengths')) {
+      // Lengths typed in the mill's unit, kept in metres: "24, 36, 48".
+      const m = S.mills.find((x) => x.id === e.target.closest('.mill-card').dataset.mill);
+      const vals = e.target.value.split(/[,;\s]+/).map((v) => parseFloat(v.replace(/[^0-9.]/g, ''))).filter((v) => isFinite(v) && v > 0);
+      m.set_lengths_m = [...new Set(vals.map((v) => fromUnit(v, m.lengths_in)))].sort((a, b) => a - b);
+      return millChanged();
+    }
     if (e.target.id !== 'set-file' || !e.target.files[0]) return;
     const text = await e.target.files[0].text().catch(() => '');
     $('#set-json').value = text;
@@ -2256,7 +2631,23 @@ function buildChrome() {
   $('#results').addEventListener('change', (e) => {
     if (e.target.id === 'sawn-whole') return change((p) => (p.settings.sawn_whole = e.target.checked));
     if (e.target.id === 'big-as-bf') return change((p) => (p.settings.sawn_big_as_bf = e.target.checked));
-    const key = { 'vat-pct': 'vat_pct', 'sawn-step': 'sawn_step', 'sawn-whole-waste': 'sawn_whole_waste' }[e.target.id];
+    if (e.target.id === 'mill-pick') {
+      if (e.target.value === '__manage') {
+        e.target.value = curMill().id;
+        return openSetup(false, 'mills');
+      }
+      return chooseMill(e.target.value);
+    }
+    if (e.target.id === 'sawn-step') {
+      // The step belongs to the mill, typed in its unit of length and kept in metres.
+      const v = parseFloat(e.target.value.replace(',', '.'));
+      const m = curMill();
+      if (!(isFinite(v) && v >= 0) || !m) return (e.target.value = m ? stepShown(m.step_m) : '');
+      m.step_m = Math.round((millFeet() ? v * M_PER_FT : v) * 1e6) / 1e6;
+      saveMillsSoon();
+      return recalc();
+    }
+    const key = { 'vat-pct': 'vat_pct', 'sawn-whole-waste': 'sawn_whole_waste' }[e.target.id];
     if (!key) return;
     const v = parseFloat(e.target.value.replace(',', '.'));
     if (isFinite(v) && v >= 0) change((p) => (p.settings[key] = v));
@@ -2273,7 +2664,8 @@ function buildChrome() {
     }
     if (e.target.dataset.price) return showTimber(e.target.dataset.price, '.t-price input');
     if (e.target.dataset.sawn) return showTimber(e.target.dataset.sawn, '.sawn-add');
-    if (e.target.dataset.settings) return openSetup(false, true);
+    if (e.target.dataset.settings) return openSetup(false, e.target.dataset.settings);
+    if (e.target.dataset.mill) return chooseMill(e.target.dataset.mill);
     if (e.target.dataset.allow) return goToAllowance(e.target.dataset.allow);
     if (e.target.dataset.notes !== undefined) {
       S.notesOpen = !S.notesOpen;
@@ -2332,7 +2724,7 @@ async function init() {
   buildUpdate();
   buildSetup();
   try {
-    [S.info, S.library, S.boards, S.mill] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/library'), api('GET', '/api/boards'), api('GET', '/api/mill')]);
+    [S.info, S.library, S.boards, S.mills] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/library'), api('GET', '/api/boards'), api('GET', '/api/mills')]);
     $('#app-version').textContent = `version ${S.info.version}`;
     fillGuide();
     S.prefs = await api('GET', '/api/prefs');

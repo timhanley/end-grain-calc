@@ -1,7 +1,7 @@
 //! Answers the designer's requests. It knows nothing about how a request
 //! arrived, so the app window and the local web server share it unchanged.
 
-use crate::model::{MillCatalogue, Project, Species};
+use crate::model::{Mill, MillCatalogue, Project, Species};
 use crate::store::{is_slug, Prefs, SaveError, Store};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -114,20 +114,32 @@ impl App {
                 }
                 Err(e) => fail(400, &format!("Couldn't read the preferences: {e}")),
             },
-            // Your mill's price list, or null if none has been imported.
-            ("GET", "/api/mill") => send_json(200, &store.mill()),
-            ("PUT", "/api/mill") if body.len() > MAX_PRICE_LIST => {
+            // The mills you buy from, each with its prices.
+            ("GET", "/api/mills") => send_json(200, &store.mills()),
+            ("PUT", "/api/mills") if body.len() > MAX_PRICE_LIST * 4 => {
+                fail(413, "That is too much to save.")
+            }
+            ("PUT", "/api/mills") => match serde_json::from_str::<Vec<Mill>>(body) {
+                Ok(mills) => {
+                    let mills: Vec<Mill> = mills.into_iter().map(Mill::cleaned).collect();
+                    match store.save_mills(&mills) {
+                        Ok(()) => send_json(200, &mills),
+                        Err(e) => fail(500, &format!("Couldn't save your mills: {e}")),
+                    }
+                }
+                Err(e) => fail(400, &format!("Couldn't read the mills: {e}")),
+            },
+            // Read a price list from outside and tidy it, in millimetres and
+            // metres. Nothing is saved: the page puts it into a mill.
+            ("POST", "/api/price-list") if body.len() > MAX_PRICE_LIST => {
                 fail(413, "That file is too big to be a price list.")
             }
-            ("PUT", "/api/mill") => {
-                let list = serde_json::from_str::<MillCatalogue>(body)
+            ("POST", "/api/price-list") => {
+                match serde_json::from_str::<MillCatalogue>(body)
                     .map_err(|e| e.to_string())
-                    .and_then(MillCatalogue::cleaned);
-                match list {
-                    Ok(list) => match store.save_mill(&list) {
-                        Ok(()) => send_json(200, &list),
-                        Err(e) => fail(500, &format!("Couldn't save the price list: {e}")),
-                    },
+                    .and_then(MillCatalogue::cleaned)
+                {
+                    Ok(list) => send_json(200, &list),
                     Err(e) => fail(
                         400,
                         &format!("That isn't a price list this app can read: {e}."),

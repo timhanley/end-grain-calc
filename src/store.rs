@@ -1,6 +1,8 @@
 //! Saved boards and the timber list, kept as plain JSON files.
 
-use crate::model::{default_library, MillCatalogue, OrderBy, Project, Species, Units};
+use crate::model::{
+    default_library, Mill, MillCatalogue, MillPrice, OrderBy, Project, Species, Units,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -9,6 +11,8 @@ use std::time::UNIX_EPOCH;
 
 /// Name of the refreshable price list in the data folder.
 pub const MILL_FILE: &str = "mill-prices.json";
+/// The mills you buy from, each with its prices.
+pub const MILLS_FILE: &str = "mills.json";
 
 /// Preferences that apply to every board, and the choices new boards
 /// start with. They are asked for once, on first run, and can be changed
@@ -28,6 +32,8 @@ pub struct Prefs {
     pub setup_done: bool,
     /// Ask GitHub at start-up whether a newer version is out.
     pub check_updates: bool,
+    /// The mill new boards are ordered from (its id): the last one chosen.
+    pub mill: String,
 }
 
 impl Default for Prefs {
@@ -39,6 +45,7 @@ impl Default for Prefs {
             tax_pct: 0.0,
             setup_done: false,
             check_updates: true,
+            mill: String::new(),
         }
     }
 }
@@ -215,6 +222,59 @@ impl Store {
             .ok()
     }
 
+    /// The mills you buy from. The first time, they are made from what an
+    /// older version kept: the prices on your timbers and your mill's price
+    /// list become one mill, which is saved straight away.
+    pub fn mills(&self) -> Vec<Mill> {
+        let path = self.dir.join(MILLS_FILE);
+        if let Ok(text) = fs::read_to_string(&path) {
+            return serde_json::from_str::<Vec<Mill>>(&text)
+                .map(|v| v.into_iter().map(Mill::cleaned).collect())
+                .unwrap_or_default();
+        }
+        let list = self.mill();
+        let prices: Vec<MillPrice> = self
+            .library()
+            .into_iter()
+            .filter(|t| t.price_per_bf > 0.0 || t.sawn.iter().any(|z| z.priced()))
+            .map(|t| MillPrice {
+                timber: t.id,
+                price_per_bf: t.price_per_bf,
+                sawn: t.sawn,
+            })
+            .collect();
+        if prices.is_empty() && list.is_none() {
+            return Vec::new();
+        }
+        let mill = Mill {
+            id: "mill-1".into(),
+            name: list
+                .as_ref()
+                .map_or_else(|| "My mill".into(), |l| l.mill.clone()),
+            source: list.as_ref().map_or_else(String::new, |l| l.source.clone()),
+            fetched: list
+                .as_ref()
+                .map_or_else(String::new, |l| l.fetched.clone()),
+            sizes_in: Units::Mm,
+            sells: Default::default(),
+            lengths_in: Default::default(),
+            step_m: list.as_ref().map_or(0.3, |l| l.step_m),
+            set_lengths_m: Vec::new(),
+            prices_include_tax: false,
+            prices,
+            list: list.map(|l| l.timbers).unwrap_or_default(),
+        }
+        .cleaned();
+        let mills = vec![mill];
+        let _ = self.save_mills(&mills);
+        mills
+    }
+
+    pub fn save_mills(&self, mills: &[Mill]) -> io::Result<()> {
+        let text = serde_json::to_string_pretty(mills).map_err(io::Error::other)?;
+        write_atomic(&self.dir.join(MILLS_FILE), &text)
+    }
+
     pub fn save_mill(&self, mill: &MillCatalogue) -> io::Result<()> {
         let text = serde_json::to_string_pretty(mill).map_err(io::Error::other)?;
         write_atomic(&self.dir.join(MILL_FILE), &text)
@@ -292,13 +352,47 @@ mod tests {
             tax_pct: 250.0,
             setup_done: true,
             check_updates: false,
+            mill: "valley".into(),
         }
         .cleaned();
         store.save_prefs(&chosen).unwrap();
         let back = store.prefs();
         assert!(back.setup_done && back.units == Units::In && back.order_by == OrderBy::Sawn);
         assert!(!back.check_updates);
+        assert_eq!(back.mill, "valley");
+        assert!(old.mill.is_empty());
         assert_eq!(back.tax_pct, 0.0, "tax outside 0 to 100 is dropped");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_older_folder_becomes_one_mill_and_a_new_one_has_none() {
+        let dir = std::env::temp_dir().join(format!("endgrain-mills-{}", std::process::id()));
+        let store = Store::open(dir.clone()).unwrap();
+        assert!(store.mills().is_empty(), "a new installation has no mills");
+
+        // An older version kept prices on the timbers and one price list.
+        let mut lib = default_library();
+        lib[0].price_per_bf = 12.5;
+        store.save_library(&lib).unwrap();
+        let list: MillCatalogue = serde_json::from_str(
+            r#"{ "mill": "Hill Sawmill", "step_m": 0.5, "timbers": [
+                { "name": "Ash", "sizes": [{ "thickness": 27, "width": 150, "price_per_m": 9.5 }] }] }"#,
+        )
+        .unwrap();
+        store.save_mill(&list.cleaned().unwrap()).unwrap();
+
+        let mills = store.mills();
+        assert_eq!(mills.len(), 1);
+        let m = &mills[0];
+        assert!(m.name == "Hill Sawmill" && m.step_m == 0.5 && m.list.len() == 1);
+        assert_eq!(m.prices.len(), 1);
+        assert!(m.prices[0].timber == lib[0].id && m.prices[0].price_per_bf == 12.5);
+        // It is saved, so it is only made once.
+        assert!(dir.join(MILLS_FILE).exists());
+        lib[0].price_per_bf = 99.0;
+        store.save_library(&lib).unwrap();
+        assert_eq!(store.mills()[0].prices[0].price_per_bf, 12.5);
         let _ = fs::remove_dir_all(dir);
     }
 

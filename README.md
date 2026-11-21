@@ -40,8 +40,8 @@ Windows or Linux, or in your web browser, and does all the maths itself;
 nothing about you or your boards leaves your computer.
 
 - Works in millimetres or inches, and in any currency.
-- Orders timber by the board foot, or in sawn sizes by the metre for mills
-  that sell that way.
+- Orders timber by the board foot, or in sawn sizes for mills that sell that
+  way: in millimetres or inches, by the metre or by the foot.
 - Takes your own mill's prices: type them in, or import a whole price list.
 - Prints a workshop sheet with the board, the order, the cuts and the
   glue-ups.
@@ -87,7 +87,7 @@ certificate, so your computer asks you to allow them once:
 - [Designing a board](#designing-a-board)
 - [What you get](#what-you-get)
 - [Two ways to write the order](#two-ways-to-write-the-order)
-- [Your mill's prices](#your-mills-prices)
+- [Mills and their prices](#mills-and-their-prices)
 - [Where things are kept](#where-things-are-kept)
 - [How the numbers are worked out](#how-the-numbers-are-worked-out)
 - [Code, and other platforms](#code-and-other-platforms)
@@ -188,12 +188,14 @@ while editing it) and `--trace` (print each request).
 
 ## First run and Settings
 
-The app comes with two timbers (walnut and cherry) and no prices, because
-every mill's prices and sizes are different. The first time it opens it asks
-four things, all of which can be skipped and changed later under **Settings**:
-the currency symbol, millimetres or inches, whether your mill sells by the
-board foot or in sawn sizes by the metre, and the tax to add. The currency
-symbol applies everywhere; the other three are what a new board starts with.
+The app comes with two timbers (walnut and cherry), no mills and no prices,
+because every mill's prices and sizes are different. The first time it opens
+it asks a few things, all of which can be skipped and changed later under
+**Settings**: the currency symbol, millimetres or inches, whether to order by
+the board foot or in sawn sizes, and the tax to add. It starts with $,
+millimetres and sawn sizes. The currency symbol applies everywhere; the rest
+are what a new board starts with. Settings is also where your mills are kept
+(see [Mills and their prices](#mills-and-their-prices)).
 
 **New versions.** When it starts, the app asks GitHub which version is the
 latest and, if it is newer than yours, shows a small "Version … is out"
@@ -220,9 +222,9 @@ width, depth and thickness and the number of rows and columns on the left.
   Shift+Cmd+Z (Ctrl on Windows and Linux).
 - **Units.** The mm/in switch in the header changes a board's units at any
   time; Settings chooses what new boards start in.
-- **Timbers.** Each timber's "···" button opens its colour, its price by the
-  board foot with the thickness to buy it as, and its sawn sizes with prices
-  per metre. "Add a timber" adds your own.
+- **Timbers.** Each timber's "···" button opens its colour and the thickness
+  to buy it as, and its prices at the mill the board is ordered from: by the
+  board foot, and its sawn sizes. "Add a timber" adds your own.
 
 If something does not add up, such as pinned sizes that leave no room for the
 rest, a note above the board says what is wrong and offers a fix.
@@ -266,13 +268,17 @@ all of it.
 
 ## Two ways to write the order
 
-The "Order from the mill" list has a switch:
+The "Order from the mill" list starts with the **mill** it is ordered from,
+and has a switch:
 
 - **By the board foot.** Rough stock by timber and thickness (4/4, 8/4 and so
   on), priced per board foot.
-- **By sawn size.** For mills that sell fixed sawn sections by the metre, such
-  as 50 x 150 mm. The calculator works out which sections and how many metres
-  to buy and which lengths to ask for. Under each line it gives the cuts:
+- **By sawn size.** For mills that sell fixed sawn sections: cut to the
+  length you ask for (50 x 150 mm by the metre, 2" x 6" by the foot), or
+  already cut to set lengths with a price for each board (a 1" x 6" at 36" or
+  48"). The calculator works out which sections to buy, how much of each and
+  which lengths to ask for, in the mill's own units. Under each line it gives
+  the cuts:
   how many pieces to crosscut and how long, then the width to rip each strip
   at and the size to plane it to. Tax (VAT, GST or sales tax, at a rate you
   set) is added on top.
@@ -291,10 +297,13 @@ enough for it (flat or on edge) once the rough allowances are added. Strips of
 the same length are then packed side by side across each available board
 width, with a kerf between them, and the cheapest combination is kept after
 adding the extra for defects and rounding up to the step the mill sells in
-(0.3 m, or your price list's step, unless you change it). The lengths to ask
-for are rounded up to that step too and include the extra for defects, so
-they add up to the metres on the order. Quantity price breaks are not
-modelled.
+(0.3 m or a foot, or your price list's step, unless you change it). The
+lengths to ask for are rounded up to that step too and include the extra for
+defects, so they add up to the total on the order. For a mill that sells set
+lengths, the strips are joined end to end into boards, each board is bought
+as the cheapest stocked length it fits, and boards are added until there is
+the extra for defects; the cheapest way of doing that is kept. Quantity price
+breaks are not modelled.
 
 **Avoid ripping** (a tick box in "By sawn size") gives a strip a whole sawn
 board to itself, planed to size, whenever a section exists that would lose no
@@ -307,18 +316,39 @@ everything: glue-ups are split into shorter panels if their strips would be
 too long, and no board on the order is longer. Enter it as 2.4m, 8ft or in the
 board's own units.
 
-## Your mill's prices
+## Mills and their prices
+
+Prices belong to **mills**, not to timbers, so you can keep the prices of
+several mills and compare them. Each board is ordered from one mill, chosen
+in the **Mill** list at the top of its order; switch it and everything is
+worked out again from that mill's sizes and prices. A new board starts with
+the mill you chose last. If the chosen mill has no prices for a timber on the
+board, a note says so, with a button to enter them or to order from a mill
+that has them.
+
+Under **Settings**, "Your mills" lists them. For each one you can rename it,
+remove it, and say how it sells: sizes in millimetres or inches; sawn sizes
+cut to length by the metre, cut to length by the foot, or in set lengths
+(with the lengths it stocks, in inches, feet or metres); and whether its
+prices are before tax or already include it. Tax, at the rate set on each
+board, is added to orders from a mill whose prices are before tax; for one
+whose prices include it, nothing is added and the order shows how much of the
+total is tax. That way two mills compare fairly whichever way they show
+prices. A timber's
+"···" editor shows and takes its prices at the board's mill, in that mill's
+units. Typing a price when you have no mill yet starts one called "My mill".
 
 To fill in a whole mill at once, use **Import a price list** (under the timber
 list, or in Settings):
 
 1. "Copy the prompt" and give it to an AI assistant that can read web pages,
-   with your mill's website. The prompt describes the format below.
+   with the mill's website. The prompt describes the format below.
 2. Paste what it returns into the box (or choose the file) and press "Read
-   this price list".
-3. Tick the timbers you use. Their prices go onto your timber list; ones you
-   don't have yet are added. Check a few against the mill's own list, since an
-   assistant can misread a page.
+   this price list". A list from a mill you already have (matched by its
+   name) updates that mill; any other becomes a new one.
+3. Tick the timbers you use. They get that mill's prices, and ones you don't
+   have yet are added to your timber list. Check a few against the mill's own
+   list, since an assistant can misread a page.
 
 A price list is a JSON file. Only `timbers` is required:
 
@@ -339,12 +369,42 @@ A price list is a JSON file. Only `timbers` is required:
 }
 ```
 
-`sizes` are nominal sawn sections in millimetres with a price per metre before
-tax; `price_per_bf` is for mills that sell by the board foot; `step_m` is the
-step of length the mill sells in. `examples/hill-sawmill.json` is a complete
-one to try the import with; the mill and its prices are invented. Prices
-already on your timbers stay as they are until you tick them again under
-"Import a price list".
+`sizes` are nominal sawn sections with a price per metre; `price_per_bf` is
+for mills that sell by the board foot; `step_m` is the step of length the
+mill sells in, in metres. Prices are taken as before tax unless the list has
+`"prices_include_tax": true`, for a mill that only shows prices with VAT or
+sales tax included.
+
+A mill that works in inches and feet can be written its own way. Add
+`"sizes_in": "in"` and give thickness and width in inches (1 1/4" or 5/4 is
+1.25); add `"lengths_in": "ft"` and give each size a `price_per_ft` instead
+of `price_per_m`, and the step as `step_ft`. The app keeps everything in
+millimetres and metres inside, and shows it in the mill's units:
+
+```json
+{
+  "mill": "Valley Lumber",
+  "sizes_in": "in",
+  "lengths_in": "ft",
+  "step_ft": 1,
+  "timbers": [
+    { "name": "Black walnut", "sizes": [{ "thickness": 1, "width": 6, "price_per_ft": 7.5 }] }
+  ]
+}
+```
+
+A mill that sells boards already cut to set lengths gives each size a list of
+its lengths and their prices instead, with `lengths_in` the unit of those
+lengths (`in`, `ft` or `m`):
+
+```json
+{ "thickness": 1, "width": 6, "lengths": [{ "length": 36, "price": 24 }, { "length": 48, "price": 30 }] }
+```
+
+The mill that a list goes into takes on its units and way of selling.
+`examples/hill-sawmill.json` is a complete list to try the import with; the
+mill and its prices are invented. A mill's prices for your timbers stay as
+they are until you tick them again after importing a newer list.
 
 ## Where things are kept
 
@@ -353,11 +413,14 @@ folder (on Windows, `.endgrain` in your user folder, such as
 `C:\Users\you\.endgrain`):
 
 - `boards/`: one file per board
-- `timber.json`: your timber list (names, colours, prices, sawn sizes,
-  preferred stock thickness)
+- `timber.json`: your timber list (names, colours, preferred stock thickness)
+- `mills.json`: your mills: how each sells, its prices for your timbers, and
+  its whole price list if you imported one
 - `prefs.json`: your settings
-- `mill-prices.json`: your mill's price list, once imported. You can also put
-  a file there yourself
+
+Versions before 0.3 kept prices on the timbers and one price list in
+`mill-prices.json`. The first time a newer version opens, those become your
+first mill; the old files are left as they were.
 
 On Windows the window's web view also keeps a few files of its own in
 `%LOCALAPPDATA%\End Grain Calc`. They hold nothing you made and can be
@@ -437,12 +500,12 @@ The layers are split so the same code can go further later:
 
 ### Publishing a new version
 
-1. Change `version` in `Cargo.toml` (for example to 0.3.0) and commit it.
+1. Change `version` in `Cargo.toml` (for example to 0.4.0) and commit it.
 2. Tag that commit with what changed, and push the tag:
 
    ```bash
-   git tag -a v0.3.0 -m "End Grain Calc 0.3.0" -m "What changed, in a line or a list."
-   git push origin v0.3.0
+   git tag -a v0.4.0 -m "End Grain Calc 0.4.0" -m "What changed, in a line or a list."
+   git push origin v0.4.0
    ```
 
 GitHub then builds the Mac and Windows apps, tests them, and publishes them

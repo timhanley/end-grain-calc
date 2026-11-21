@@ -120,7 +120,7 @@
     <button type="button" role="tab" data-page="design">Designing</button>
     <button type="button" role="tab" data-page="lists">The lists</button>
     <button type="button" role="tab" data-page="order">Ordering</button>
-    <button type="button" role="tab" data-page="prices">Mill prices</button>
+    <button type="button" role="tab" data-page="prices">Mills</button>
     <button type="button" role="tab" data-page="numbers">The numbers</button>
     <button type="button" role="tab" data-page="words">Glossary</button>
     <button type="button" role="tab" data-page="about">About</button>
@@ -154,7 +154,7 @@
     <div><dt>When it doesn't add up</dt><dd>A note above the board says what is wrong and offers a fix: pinned sizes that leave no room for the rest, say, or unpinned ones that would come to a fraction of a millimetre.</dd></div>
   </dl>
   <h4>Timbers</h4>
-  <p>Each timber's &middot;&middot;&middot; button opens its editor: its colour, its price by the board foot with the thickness to buy it as, and the sawn sizes your mill sells it in with their prices per metre. "Add a timber" adds one of your own, and "Remove this timber" is at the top of its editor.</p>
+  <p>Each timber's &middot;&middot;&middot; button opens its editor: its colour, the thickness to buy it as, and its prices at the board's mill, by the board foot and in sawn sizes. "Add a timber" adds one of your own, and "Remove this timber" is at the top of its editor.</p>
   <h4>Saving and your boards</h4>
   <p><b>Save board</b> (or Cmd+S, Ctrl+S on Windows and Linux) saves the board under its name, which you can change at the top of the window. "Not saved" shows beside the name while there are changes to save. <b>Boards</b> lists your saved boards to open or delete, and has "New board" and "Duplicate this board". The app asks before closing, or opening another board, with unsaved changes.</p>
   </section>
@@ -177,17 +177,18 @@
 
   <section class="guide-page" data-page="order" role="tabpanel">
   <h3>Ordering timber</h3>
-  <p>The order has a switch for the two ways mills sell hardwood.</p>
+  <p>The order starts with the <b>Mill</b> it is ordered from: choose another to compare, and everything is worked out again from that mill's sizes and prices (the <a href="#" data-goto="prices">Mills</a> page says more). Below that is a switch for the two ways mills sell hardwood.</p>
   <dl class="guide-how">
     <div><dt>By the board foot</dt><dd>Rough stock by timber and thickness (4/4, 8/4 and so on), priced per board foot, with your extra for defects added. Each timber is kept to one stock thickness unless mixing two saves more than a tenth. To always buy a timber in one thickness, set "Buy as" in its editor.</dd></div>
-    <div><dt>By sawn size</dt><dd>For mills that sell fixed sawn sections by the metre, such as 50 &times; 150 mm. The order says which sections to buy and how many metres of each. Under each line is "Ask the mill for": the lengths to ask for, rounded up to the step the mill sells in and including your extra for defects, so they add up to the metres ordered. Then come the cuts: how many pieces to crosscut and how long, and what to rip each into. A chip such as <span class="chip rp" aria-hidden="true"><b>2 &times;</b><small>rip</small>51 mm<small>&rarr; plane</small>45 mm</span> means two strips, each ripped at 51 mm and planed to 45 mm.</dd></div>
+    <div><dt>By sawn size</dt><dd>For mills that sell fixed sawn sections: cut to the length you ask for (50 &times; 150 mm by the metre, 2&quot; &times; 6&quot; by the foot), or already cut to set lengths with a price for each board (a 1&quot; &times; 6&quot; at 36&quot; or 48&quot;). The order says which sections to buy and how much of each, in the mill's own units. Under each line is "Ask the mill for": the lengths to ask for, rounded up to the step the mill sells in (0.3 m or a foot, to start with) and including your extra for defects, so they add up to the metres ordered. Then come the cuts: how many pieces to crosscut and how long, and what to rip each into. A chip such as <span class="chip rp" aria-hidden="true"><b>2 &times;</b><small>rip</small>51 mm<small>&rarr; plane</small>45 mm</span> means two strips, each ripped at 51 mm and planed to 45 mm.</dd></div>
   </dl>
   <h4>On a sawn order</h4>
   <ul class="guide-points">
     <li>A timber with no sawn sizes entered stays on a board-foot list beneath.</li>
     <li>A strip too big for every sawn size its timber comes in is left off, with the reason and the largest size that would fit. Tick "Order these by the board foot" to buy those that way instead.</li>
     <li><b>Avoid ripping</b> gives a strip a whole sawn board to itself, planed to size, where that would plane away no more than the share of the board you set (half, to start with). Thinner strips are still ripped from wider boards. The note beside it says how many strips that affects and what it does to the cost.</li>
-    <li>The step the mill sells length in (0.3 m to start with, or your price list's) is under the order. Tax, at the rate you set, is added at the bottom.</li>
+    <li>Boards bought in set lengths say the price of each: "Ask the mill for 2 &times; 48&quot; at $30.00". The strips are joined end to end, each board is the cheapest stocked length it fits, and boards are added until there is your extra for defects.</li>
+    <li>For a mill that cuts to length, the step it sells length in (0.3 m or a foot to start with, or its price list's) is under the order. Tax, at the rate you set, is added at the bottom.</li>
   </ul>
   <h4>Longest board I can carry</h4>
   <p>Under "Saw and allowances". Nothing on the order, and no strip, is longer than this: glue-ups are split into shorter panels if their strips would be too long. Type it as 2.4m, 8ft or in the board's own units, or leave it empty for no limit.</p>
@@ -196,20 +197,23 @@
   </section>
 
   <section class="guide-page" data-page="prices" role="tabpanel">
-  <h3>Your mill's prices</h3>
-  <p>The app starts with no prices, because every mill's prices and sizes are different. There are two ways to give it yours.</p>
+  <h3>Mills and their prices</h3>
+  <p>The app starts with no prices, because every mill's prices and sizes are different. Prices belong to <b>mills</b>, not to timbers, so you can keep several mills' prices and compare them. Each board is ordered from one mill, chosen at the top of its order, and a new board starts with the one you chose last.</p>
   <dl class="guide-how">
-    <div><dt>Type them in</dt><dd>Open a timber's &middot;&middot;&middot; editor and enter its price per board foot, or the sawn sizes your mill sells it in with the price per metre of each.</dd></div>
-    <div><dt>Import a whole price list</dt><dd>Use <b>Import a price list</b>, under the timber list or in Settings:
+    <div><dt>Your mills</dt><dd>Under Settings. For each mill you can change its name, remove it, and say how it sells: sizes in millimetres or inches; sawn sizes cut to length by the metre, cut to length by the foot, or in set lengths, with the lengths it stocks; and whether its prices are before tax or already include it.</dd></div>
+    <div><dt>Tax</dt><dd>Each board has a tax rate, under its order. It is added to orders from a mill whose prices are before tax. For a mill whose prices include it, nothing is added and the order shows how much of the total is tax, so mills compare fairly either way.</dd></div>
+    <div><dt>Type prices in</dt><dd>Open a timber's &middot;&middot;&middot; editor. It shows the timber's prices at the board's mill, in that mill's units: a price per board foot, and the sawn sizes it sells with the price per metre or foot of each, or for set lengths the price of each board. Typing a price when you have no mill yet starts one called My mill.</dd></div>
+    <div><dt>Import a price list</dt><dd>Use <b>Import a price list</b>, under the timber list or in Settings:
       <ol>
-        <li>"Copy the prompt" and give it to an AI assistant that can read web pages, along with your mill's website. The prompt tells it what to look for and how to set it out.</li>
-        <li>Paste what it gives you into the box, or choose the file, and press "Read this price list".</li>
-        <li>Tick the timbers you use. Their prices go onto your timber list, and any you don't have yet are added.</li>
+        <li>"Copy the prompt" and give it to an AI assistant that can read web pages, along with the mill's website. The prompt tells it what to look for and how to set it out.</li>
+        <li>Paste what it gives you into the box, or choose the file, and press "Read this price list". A list from a mill you already have (by its name) updates that mill; any other becomes a new one, with the list's units and way of selling.</li>
+        <li>Tick the timbers you use. They get that mill's prices, and any you don't have yet are added to your timber list.</li>
       </ol>
     </dd></div>
+    <div><dt>A timber the mill doesn't sell</dt><dd>The order names it, with a button to enter its prices and another to order from a mill that has them.</dd></div>
   </dl>
-  <p class="guide-note">An assistant can misread a page, so check a few prices against the mill's own list. Prices already on your timbers stay as they are until you tick them again.</p>
-  <p>Once a list is imported, a timber that has no sawn sizes yet gets a button on the order to use the mill's prices for it. A price list is a small file; the <a href="https://github.com/timhanley/end-grain-calc#your-mills-prices" data-external>README on GitHub</a> describes it.</p>
+  <p class="guide-note">An assistant can misread a page, so check a few prices against the mill's own list. A mill's prices for your timbers stay as they are until you tick them again after importing a newer list.</p>
+  <p>A price list is a small file; the <a href="https://github.com/timhanley/end-grain-calc#mills-and-their-prices" data-external>README on GitHub</a> describes it.</p>
   </section>
 
   <section class="guide-page" data-page="numbers" role="tabpanel">
@@ -242,7 +246,7 @@
         <div><dt>Flattening</dt><dd>Extra left on the strips (panel flattening) and on the slices (end grain flattening) so each glue-up can be planed or sanded flat afterwards.</dd></div>
         <div><dt>Edge trim</dt><dd>Extra width on the two outer strips, cut away when the finished board is squared up.</dd></div>
         <div><dt>Board foot</dt><dd>A volume of timber: 1 inch thick, 12 inches wide and 12 inches long. Rough thickness is given in quarter inches, so 8/4 is 2 inches.</dd></div>
-        <div><dt>Sawn size</dt><dd>A fixed cross-section that a mill sells by the metre, such as 50 × 150 mm. Sizes are nominal and can vary by a millimetre or two.</dd></div>
+        <div><dt>Sawn size</dt><dd>A fixed cross-section that a mill sells by length, such as 50 × 150 mm by the metre or 2" × 6" by the foot. Sizes are nominal and can vary a little.</dd></div>
         <div><dt>Avoid ripping</dt><dd>Gives a strip a whole sawn board to itself, planed to size, where that would not waste too much of the board.</dd></div>
   </dl>
   </section>
@@ -252,7 +256,7 @@
   <p class="guide-note warn"><b>Check the numbers before you buy timber or cut it.</b> End Grain Calc is a free tool and it can be wrong, and your saw, your timber and your mill will not match its assumptions exactly. It comes with no warranty, and the author takes no responsibility for errors or for anything that follows from using it.</p>
   <dl class="guide-how">
     <div><dt>Version</dt><dd>This is version <span id="guide-version">&hellip;</span>. When the app starts it asks GitHub which version is the latest, and shows a small button in the header if a newer one is out. That question is all the app sends over the internet, and nothing about you or your boards goes with it. Turn it off under Settings. Every version is on the <a href="https://github.com/timhanley/end-grain-calc/releases" data-external>releases page</a>.</dd></div>
-    <div><dt>Where your work is kept</dt><dd>On this computer, in <code id="guide-data">your home folder, in .endgrain</code>: a file for each board in <code>boards</code>, and your timber list, settings and mill's price list beside it. They are plain text files, so they are easy to back up or copy to another computer.</dd></div>
+    <div><dt>Where your work is kept</dt><dd>On this computer, in <code id="guide-data">your home folder, in .endgrain</code>: a file for each board in <code>boards</code>, and your timber list, mills and settings beside it. They are plain text files, so they are easy to back up or copy to another computer.</dd></div>
     <div><dt>Licence</dt><dd>Free to use, copy, change and share under the <a href="https://github.com/timhanley/end-grain-calc/blob/main/LICENSE" data-external>MIT licence</a>, which also says it comes with no warranty. The source is <a href="https://github.com/timhanley/end-grain-calc" data-external>on GitHub</a>.</dd></div>
     <div><dt>Made by</dt><dd>Made with love for woodworkers by <a href="https://teajayhan.com" data-external>TEA JAY HAN</a>.</dd></div>
   </dl>
